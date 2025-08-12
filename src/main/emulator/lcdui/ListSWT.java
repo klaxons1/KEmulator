@@ -305,15 +305,11 @@ public class ListSWT extends SWTScreen implements IListImpl {
 //			}
 			int imgWidth = 0;
 			if (img != null) {
-				try {
-					ImageData data = img.getImageData();
-					imgWidth = data.width;
-					int imgHeight = data.height;
-					if (imgWidth != 0 && imgHeight != 0) {
-						size.x += (int) ((float) (event.height * imgWidth) / imgHeight);
-					}
-				} catch (Exception ignored) {
-					// FIXME
+				ImageData data = img.getImageData();
+				imgWidth = data.width;
+				int imgHeight = data.height;
+				if (imgWidth != 0 && imgHeight != 0) {
+					size.x += (int) ((float) (event.height * imgWidth) / imgHeight);
 				}
 			}
 			event.width = size.x + 2;
@@ -326,21 +322,17 @@ public class ListSWT extends SWTScreen implements IListImpl {
 			event.gc.setFont(item.getFont());
 			int imgWidth = 0;
 			if (img != null) {
-				try {
-					ImageData data = img.getImageData();
-					imgWidth = data.width;
-					int imgHeight = data.height;
-					if (imgWidth != 0 && imgHeight != 0) {
-						int dstWidth = (int) ((float) (event.height * imgWidth) / imgHeight);
-						event.gc.drawImage(img, 0, 0, imgWidth, imgHeight,
-								event.x, event.y,
-								dstWidth, event.height);
-						imgWidth = dstWidth;
-					} else {
-						imgWidth = 0;
-					}
-				} catch (Exception ignored) {
-					// FIXME
+				ImageData data = img.getImageData();
+				imgWidth = data.width;
+				int imgHeight = data.height;
+				if (imgWidth != 0 && imgHeight != 0) {
+					int dstWidth = (int) ((float) (event.height * imgWidth) / imgHeight);
+					event.gc.drawImage(img, 0, 0, imgWidth, imgHeight,
+							event.x, event.y,
+							dstWidth, event.height);
+					imgWidth = dstWidth;
+				} else {
+					imgWidth = 0;
 				}
 			}
 			int yOffset = 0;
