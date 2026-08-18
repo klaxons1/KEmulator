@@ -78,6 +78,7 @@ public class Figure {
 	public Figure(byte[] b) {
 		if (b == null) throw new NullPointerException();
 		loadMBAC(b);
+		registerLive();
 	}
 
 	public Figure(String name) throws IOException {
@@ -97,6 +98,19 @@ public class Figure {
 		is.close();
 
 		loadMBAC(baos.toByteArray());
+		registerLive();
+	}
+
+	private void registerLive() {
+		synchronized (LIVE) {
+			LIVE.put(this, Boolean.TRUE);
+		}
+	}
+
+	static Figure[] liveFigures() {
+		synchronized (LIVE) {
+			return LIVE.keySet().toArray(new Figure[0]);
+		}
 	}
 
 	private final void loadMBAC(byte[] data) {
@@ -598,6 +612,9 @@ public class Figure {
 	}
 
 	public final void dispose() {
+		synchronized (LIVE) {
+			LIVE.remove(this);
+		}
 		vertices = null; normals = null; 
 		polyC3 = null; polyC4 = null;
 		polyT3 = null; polyT4 = null;

@@ -152,6 +152,10 @@ M3G_VIEW_DISPLAY_COORDINATE   = Ejes de coordenadas
 M3G_VIEW_DISPLAY_SHOW_GRID    = Mostrar cuadrícula
 M3G_VIEW_DISPLAY_SHOW_XRAY    = Modo rayos X
 M3G_VIEW_DISPLAY_UPDATE_WORLD = Actualizar mundo
+M3G_VIEW_DISPLAY_EXPORT_GLTF=Exportar escena como glTF...
+M3G_VIEW_EXPORT_NO_SCENE=No hay escena cargada
+M3G_VIEW_EXPORT_DONE=Exportación finalizada
+M3G_VIEW_EXPORT_ERROR=Error de exportación
 
 
 #MemoryView

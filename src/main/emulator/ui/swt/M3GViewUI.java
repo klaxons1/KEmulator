@@ -322,7 +322,9 @@ public final class M3GViewUI implements MouseMoveListener, DisposeListener, KeyL
 	}
 
     private void exportSceneAsGltf() {
-        if (currentNode == null) {
+        boolean hasM3g = currentNode != null;
+        boolean hasMascot = MascotGltfExporter.hasScene();
+        if (!hasM3g && !hasMascot) {
             MessageBox mb = new MessageBox(shell, SWT.ICON_WARNING | SWT.OK);
             mb.setMessage(UILocale.get("M3G_VIEW_EXPORT_NO_SCENE", "No scene loaded"));
             mb.open();
@@ -332,7 +334,7 @@ public final class M3GViewUI implements MouseMoveListener, DisposeListener, KeyL
         FileDialog dialog = new FileDialog(shell, SWT.SAVE);
         dialog.setFilterExtensions(new String[]{"*.glb"});
         dialog.setFilterNames(new String[]{"glTF Binary (*.glb)"});
-        dialog.setFileName("scene.glb");
+        dialog.setFileName(hasM3g ? "scene.glb" : "mascot.glb");
         String path = dialog.open();
         if (path == null) return;
 
@@ -341,10 +343,26 @@ public final class M3GViewUI implements MouseMoveListener, DisposeListener, KeyL
         }
 
         try {
-            GltfExporter.export(currentNode, new java.io.File(path));
+            StringBuilder done = new StringBuilder();
+            if (hasM3g) {
+                GltfExporter.export(currentNode, new java.io.File(path));
+                done.append(path);
+            }
+            if (hasMascot) {
+                String mascotPath = path;
+                if (hasM3g) {
+                    int dot = path.lastIndexOf('.');
+                    mascotPath = (dot > 0 ? path.substring(0, dot) : path) + "_mascot.glb";
+                }
+                MascotGltfExporter.export(new java.io.File(mascotPath));
+                if (done.length() > 0) {
+                    done.append('\n');
+                }
+                done.append(mascotPath);
+            }
 
             MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
-            mb.setMessage(UILocale.get("M3G_VIEW_EXPORT_DONE", "Export finished") + ":\n" + path);
+            mb.setMessage(UILocale.get("M3G_VIEW_EXPORT_DONE", "Export finished") + ":\n" + done);
             mb.open();
         } catch (Exception ex) {
             ex.printStackTrace();

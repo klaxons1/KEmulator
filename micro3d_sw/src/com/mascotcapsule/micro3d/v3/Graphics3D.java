@@ -331,6 +331,8 @@ public class Graphics3D {
 		fbDrawCounter = 0;
 
 		backCopied = false;
+
+		MascotSceneCapture.begin(fbWidth, fbHeight);
 	}
 
 	private void copy2d(boolean preProcess) {
@@ -395,6 +397,8 @@ public class Graphics3D {
 
 		bindTextures = 0;
 		g3dSphereTex = efxSphereTex = null;
+
+		MascotSceneCapture.commit();
 	}
 
 	public final void release(Graphics graphics) {
@@ -405,6 +409,8 @@ public class Graphics3D {
 		if (!AppSettings.mascotNo2DMixing) {
 			copy2d(false);
 		}
+
+		MascotSceneCapture.commit();
 		
 		boundGraphics = null;
 	}
@@ -868,6 +874,48 @@ public class Graphics3D {
 		efxToonHigh = effect.toonHigh;
 	}
 	
+	final MascotSceneCapture.ProjSnap snapProj(FigureLayout layout) {
+		MascotSceneCapture.ProjSnap s = new MascotSceneCapture.ProjSnap();
+		s.mode = projectionMode;
+		s.near = projNear;
+		s.far = projFar;
+		s.scaleX = projScaleX;
+		s.scaleY = projScaleY;
+		s.centerX = drawCenterX;
+		s.centerY = drawCenterY;
+		s.fbW = fbWidth;
+		s.fbH = fbHeight;
+		if (layout != null) {
+			s.layoutCmd = layout.projectionMode;
+			s.angle = layout.angle;
+			s.parallelW = layout.parallelWidth;
+			s.parallelH = layout.parallelHeight;
+			s.perspW = layout.perspectiveWidth;
+			s.perspH = layout.perspectiveHeight;
+		}
+		return s;
+	}
+
+	final MascotSceneCapture.EffectSnap snapEffect(Effect3D effect) {
+		MascotSceneCapture.EffectSnap s = new MascotSceneCapture.EffectSnap();
+		s.transparency = efxTransparency;
+		s.toon = efxToon;
+		s.toonThreshold = efxToonThreshold;
+		s.toonLow = efxToonLow;
+		s.toonHigh = efxToonHigh;
+		s.sphere = efxSphereTex != null ? efxSphereTex : (effect != null ? effect.sphereTexture : null);
+		Light light = efxLight != null ? efxLight : (effect != null ? effect.light : null);
+		if (light != null) {
+			s.hasLight = true;
+			s.amb = light.ambIntensity;
+			s.dir = light.dirIntensity;
+			s.lx = light.direction.x;
+			s.ly = light.direction.y;
+			s.lz = light.direction.z;
+		}
+		return s;
+	}
+
 	private final void setClip(int x, int y, int w, int h) {
 		int fbWidth = this.fbWidth;
 		int fbHeight = this.fbHeight;
@@ -933,6 +981,7 @@ public class Graphics3D {
 		setCenter(layout, x, y);
 		setProjection(layout);
 		setEffect(effect);
+		MascotSceneCapture.captureFigure(this, figure, viewTrans, layout, effect);
 		
 		boolean useBlending = efxTransparency && ((figure.allMatsOr & Figure.MAT_BLEND_MASK) != 0);
 
@@ -1512,6 +1561,9 @@ public class Graphics3D {
 		
 		if (colorType == PDATA_COLOR_INVALID) throw new IllegalArgumentException("Invalid pdata color type");
 		if (normalType == PDATA_NORMAL_INVALID) throw new IllegalArgumentException("Invalid pdata normal type");
+
+		MascotSceneCapture.capturePrim(this, tex, trans, command, numPrims, isQuad,
+				verts, vtxOffset, normals, normOffset, uvs, uvOffset, colors, colOffset);
 		
 		boolean flatNormals = normalType == PDATA_NORMAL_PER_FACE;
 		boolean lighting = normalType != 0 && efxLight != null && (command & PATTR_LIGHTING) != 0;
@@ -1643,6 +1695,9 @@ public class Graphics3D {
 		if (colorType == PDATA_COLOR_INVALID) throw new IllegalArgumentException("Invalid pdata color type");
 		else if(colorType == 0) return;
 
+		MascotSceneCapture.capturePrim(this, null, trans, command, numPrims, false,
+				verts, vtxOffset, null, 0, null, 0, colors, colOffset);
+
 		reservePrimBuffers(numPrims, 4);
 
 		int primDataUsed = this.primDataUsed;
@@ -1734,6 +1789,9 @@ public class Graphics3D {
 		int colorType = command & PDATA_COLOR_MASK;
 		if (colorType == PDATA_COLOR_INVALID) throw new IllegalArgumentException("Invalid pdata color type");
 		else if(colorType == 0) return;
+
+		MascotSceneCapture.capturePrim(this, null, trans, command, numPrims, false,
+				verts, vtxOffset, null, 0, null, 0, colors, colOffset);
 
 		reservePrimBuffers(numPrims, 6);
 
@@ -1868,6 +1926,9 @@ public class Graphics3D {
 
 		int mode = command & PDATA_SPRITE_PARAMS_MASK;
 		if (mode == 0) return;
+
+		MascotSceneCapture.capturePrim(this, tex, trans, command, numPrims, false,
+				verts, vtxOffset, null, 0, sprParams, paramOffset, null, 0);
 		
 		bindTexture(tex);
 
@@ -2696,6 +2757,48 @@ public class Graphics3D {
 				for (int i = 0; i < vertsCount; i++) {
 					tmpEnvUVs[i * 2] =	 (short) verts[i * attsCount + 4];
 					tmpEnvUVs[i * 2 + 1] = (short) verts[i * attsCount + 5];
+				}
+
+				offset += 2;
+			}
+		}
+
+		int[] bckProjVtx = projVtx;
+		short[] bckLightVtx = lightVtx, bckEnvUVs = envUVs;
+		projVtx = tmpProjVtx;
+		if (clipPolyHasLight) {
+			lightVtx = tmpLightVtx;
+			envUVs = tmpEnvUVs;
+		}
+
+		boolean tmpLight = (clipPolyMat & Figure.MAT_LIGHTING) != 0;
+		boolean tmpEnv = tmpLight && ((clipPolyMat & Figure.MAT_SPECULAR) != 0);
+		int polyStride = calcPolygonStride(clipPolyHasUVs, clipPolyFlatNorm, tmpLight, tmpEnv);
+		reservePrimBuffers(vertsCount - 1, polyStride);
+
+		for (int i = 1; i < vertsCount - 1; i++) {
+			int v0 = 0, v1 = i, v2 = i + 1;
+
+			if (startTriangle(clipPolyMat, clipPolyTexCol, clipPolyEnvmapId, v0, v1, v2, clipPolyNormalId, false)) {
+				if (clipPolyHasUVs) {
+					setTriangleUVs(
+						verts[v0 * attsCount + offset], verts[v0 * attsCount + offset + 1],
+						verts[v1 * attsCount + offset], verts[v1 * attsCount + offset + 1],
+						verts[v2 * attsCount + offset], verts[v2 * attsCount + offset + 1]
+					);
+				}
+
+				endTriangle(sortZ);
+			}
+		}
+
+		projVtx = bckProjVtx;
+		if (clipPolyHasLight) {
+			lightVtx = bckLightVtx;
+			envUVs = bckEnvUVs;
+		}
+	}
+}i * 2 + 1] = (short) verts[i * attsCount + 5];
 				}
 
 				offset += 2;

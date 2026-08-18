@@ -148,6 +148,10 @@ M3G_VIEW_DISPLAY_COORDINATE   = Coordinate Axis
 M3G_VIEW_DISPLAY_SHOW_GRID    = Show Grid
 M3G_VIEW_DISPLAY_SHOW_XRAY    = Show Xray
 M3G_VIEW_DISPLAY_UPDATE_WORLD=Update World
+M3G_VIEW_DISPLAY_EXPORT_GLTF=Экспорт сцены в glTF...
+M3G_VIEW_EXPORT_NO_SCENE=Сцена не загружена
+M3G_VIEW_EXPORT_DONE=Экспорт завершён
+M3G_VIEW_EXPORT_ERROR=Ошибка экспорта
 
 
 #Log Frame

@@ -237,7 +237,40 @@ public class Texture {
 	}
 
 	public IImage _getDebugImage() {
-		// TODO
-		return null;
+		try {
+			int w = width > 0 ? width : paddedWidth;
+			int h = height > 0 ? height : paddedHeight;
+			if (w <= 0 || h <= 0) return null;
+
+			IImage img = emulator.Emulator.getEmulator().newImage(w, h, true);
+			int[] data = img.getData();
+			if (data == null) return null;
+
+			if (isForModel && bitmapData != null) {
+				int[] pal = origPalette != null ? origPalette : palette;
+				if (pal == null) return null;
+				int stride = paddedWidth > 0 ? paddedWidth : w;
+				for (int y = 0; y < h; y++) {
+					for (int x = 0; x < w; x++) {
+						int idx = bitmapData[y * stride + x] & 0xff;
+						data[y * w + x] = pal[idx];
+					}
+				}
+			} else if (envmapData != null) {
+				int stride = paddedWidth > 0 ? paddedWidth : w;
+				for (int y = 0; y < h; y++) {
+					for (int x = 0; x < w; x++) {
+						data[y * w + x] = 0xff000000 | envmapData[y * stride + x];
+					}
+				}
+			} else {
+				return null;
+			}
+
+			img.setData(data);
+			return img;
+		} catch (Throwable ignored) {
+			return null;
+		}
 	}
 }
