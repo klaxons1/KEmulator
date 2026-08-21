@@ -216,6 +216,6 @@ public final class CopyUtils {
 	}
 
 	public static void setClipboard(final BufferedImage bufferedImage) {
-		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new a(bufferedImage), null);
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new ImageTransferable(bufferedImage), null);
 	}
 }
