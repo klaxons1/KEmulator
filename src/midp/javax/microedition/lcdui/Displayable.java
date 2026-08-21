@@ -369,7 +369,7 @@ public class Displayable {
 					}
 				} catch (Exception ignored) {
 				}
-				Settings.aLong1235 += System.currentTimeMillis() - currentTimeMillis;
+				Settings.pausedTime += System.currentTimeMillis() - currentTimeMillis;
 			}
 			--AppSettings.steps;
 		}

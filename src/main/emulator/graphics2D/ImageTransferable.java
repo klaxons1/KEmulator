@@ -6,12 +6,12 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 
-final class a implements Transferable {
-	private BufferedImage aBufferedImage350;
+final class ImageTransferable implements Transferable {
+	private final BufferedImage image;
 
-	public a(final BufferedImage aBufferedImage350) {
+	public ImageTransferable(final BufferedImage image) {
 		super();
-		this.aBufferedImage350 = aBufferedImage350;
+		this.image = image;
 	}
 
 	public final DataFlavor[] getTransferDataFlavors() {
@@ -26,6 +26,6 @@ final class a implements Transferable {
 		if (!DataFlavor.imageFlavor.equals(dataFlavor)) {
 			throw new UnsupportedFlavorException(dataFlavor);
 		}
-		return this.aBufferedImage350;
+		return this.image;
 	}
 }

@@ -67,7 +67,7 @@ public final class Settings {
 	public static boolean enableKeyCache;
 	public static boolean canvasKeyboard;
 
-	public static long aLong1235;
+	public static long pausedTime;
 	public static final long rngSeed = new Random().nextLong();
 	public static long recordedRandomSeed = rngSeed;
 	public static boolean playingRecordedKeys;
