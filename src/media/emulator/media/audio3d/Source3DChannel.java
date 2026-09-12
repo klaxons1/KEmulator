@@ -362,7 +362,7 @@ public class Source3DChannel {
 	 * MP3 seek: rebuilds the javazoom player and skips to the requested time.
 	 * Runs on the calling thread (it may block on decoding).
 	 */
-	private void mpegSeek(long t) {
+	private void mpegSeek(long t) throws MediaException {
 		try {
 			boolean wasPlaying = playerImpl.getState() == javax.microedition.media.Player.STARTED;
 			if (wasPlaying) {
