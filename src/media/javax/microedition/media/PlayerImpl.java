@@ -5,6 +5,7 @@ import emulator.Settings;
 import emulator.custom.ResourceManager;
 import emulator.media.EmulatorMIDI;
 import emulator.media.amr.AMRDecoder;
+import emulator.media.audio3d.Source3DChannel;
 import emulator.media.mmf.MMFPlayer;
 import emulator.media.mmf.MaDll;
 import emulator.media.tone.ToneControlImpl;
@@ -61,6 +62,12 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 
 	private WavCache cacheRef;
 	private SourceDataLine midiOutput;
+
+	/** 3D audio attachment, set by SoundSource3D.addPlayer (JSR-234). */
+	public Source3DChannel audio3d;
+	/** Raw decoded PCM (WAV/AMR), captured at realize time for 3D playback. */
+	private byte[] rawPCM;
+	private AudioFormat rawPCMFormat;
 
 	public PlayerImpl() {
 		loopCount = 1;
@@ -125,6 +132,9 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 					8000.0f,
 					false
 			);
+			// keep the decoded PCM for 3D playback
+			rawPCM = b;
+			rawPCMFormat = audioFormat;
 			final AudioInputStream audioInputStream = new AudioInputStream(i, audioFormat, -1L);
 			final Clip clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, audioFormat));
 			clip.addLineListener(this);
@@ -178,12 +188,38 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 								* 2, format.getFrameRate(), true), audioInputStream);
 				format = audioFormat;
 			}
-			final Clip clip;
-			(clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, audioInputStream
-					.getFormat(), (int) audioInputStream.getFrameLength() * format.getFrameSize())))
-					.addLineListener(Settings.wavCache ? key : this);
-			clip.open(audioInputStream);
-			sequence = clip;
+		// Read the full PCM into memory; it is also captured for 3D playback.
+		ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
+		byte[] pcmBuf = new byte[4096];
+		int pr;
+		while ((pr = audioInputStream.read(pcmBuf)) != -1) {
+			pcmOut.write(pcmBuf, 0, pr);
+		}
+		final byte[] pcmBytes = pcmOut.toByteArray();
+		if (format.getEncoding() == AudioFormat.Encoding.PCM_SIGNED
+				&& (format.getSampleSizeInBits() == 8 || format.getSampleSizeInBits() == 16)
+				&& format.getChannels() <= 2) {
+			if (format.isBigEndian() && format.getSampleSizeInBits() == 16) {
+				// OpenAL expects native (little-endian) order; the Clip keeps the original bytes
+				byte[] sw = pcmBytes.clone();
+				for (int i = 0; i + 1 < sw.length; i += 2) {
+					byte t = sw[i];
+					sw[i] = sw[i + 1];
+					sw[i + 1] = t;
+				}
+				rawPCM = sw;
+			} else {
+				rawPCM = pcmBytes;
+			}
+			rawPCMFormat = format;
+		}
+		int frames = pcmBytes.length / Math.max(format.getFrameSize(), 1);
+		AudioInputStream buffered = new AudioInputStream(new ByteArrayInputStream(pcmBytes), format, frames);
+		final Clip clip;
+		(clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, format, frames * format.getFrameSize())))
+				.addLineListener(Settings.wavCache ? key : this);
+		clip.open(buffered);
+		sequence = clip;
 
 			if (Settings.wavCache && key != null) {
 				synchronized (wavCache) {
@@ -311,6 +347,12 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 				stop();
 			} catch (Exception ignored) {}
 		}
+		if (audio3d != null) {
+			audio3d.detach();
+			audio3d = null;
+			rawPCM = null;
+			rawPCMFormat = null;
+		}
 		if (sequence instanceof emulator.javazoom.jl.player.Player) {
 			((emulator.javazoom.jl.player.Player) sequence).close();
 		} else if (sequence instanceof Sequence) {
@@ -361,6 +403,12 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 			try {
 				stop();
 			} catch (MediaException ignored) {}
+		}
+		if (audio3d != null) {
+			audio3d.detach();
+			audio3d = null;
+			rawPCM = null;
+			rawPCMFormat = null;
 		}
 		if (sequence instanceof MaDll) {
 			if (maOwner == this && maSound != -1) {
@@ -426,6 +474,9 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 	}
 
 	public long getMediaTime() {
+		if (audio3d != null) {
+			return mediaTime = audio3d.getMediaTimeMicros();
+		}
 		if (sequence == null) return mediaTime;
 		if (sequence instanceof Clip) {
 			return mediaTime = ((Clip) sequence).getMicrosecondPosition();
@@ -451,6 +502,17 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 	}
 
 	public long setMediaTime(final long t) throws MediaException {
+		if (audio3d != null) {
+			if (t < 0) {
+				throw new MediaException("Invalid media time");
+			}
+			long duration = getDuration();
+			if (duration >= 0 && t > duration) {
+				throw new MediaException("Invalid media time");
+			}
+			audio3d.setMediaTimeMicros(t);
+			return mediaTime = t;
+		}
 		if (sequence == null) return 0;
 		long ms = 0L;
 		if (sequence instanceof Clip) {
@@ -560,15 +622,13 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 					midi(inputStream, false);
 				} else if ("audio/mmf".equals(contentType) || "application/x-smaf".equals(contentType)) {
 					mmf(inputStream, false);
-				} else if ("audio/mpeg".equals(contentType) || "audio/mp3".equals(contentType)) {
-					try {
-						InputStream i = inputStream;
-						if (i instanceof ByteArrayInputStream || Settings.enableMediaDump) {
-							data = ResourceManager.getBytes(i);
-							i = this.inputStream = new ByteArrayInputStream(data);
-						}
-						sequence = new emulator.javazoom.jl.player.Player(i, false);
-					} catch (JavaLayerException e) {
+					} else if ("audio/mpeg".equals(contentType) || "audio/mp3".equals(contentType)) {
+						try {
+							// always buffered: the decoder may be rebuilt for 3D playback
+							data = ResourceManager.getBytes(inputStream);
+							this.inputStream = new ByteArrayInputStream(data);
+							sequence = new emulator.javazoom.jl.player.Player(this.inputStream, false);
+						} catch (JavaLayerException e) {
 						e.printStackTrace();
 						throw new IOException(e);
 					}
@@ -721,6 +781,23 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 		if (sequence == null) return;
 		if (sequence instanceof emulator.javazoom.jl.player.Player) {
 			((emulator.javazoom.jl.player.Player) sequence).stop();
+			if (audio3d != null) {
+				stop = true;
+				synchronized (playLock) {
+					playLock.notifyAll();
+				}
+				if (playerThread != null) {
+					final Thread t = playerThread;
+					playerThread = null;
+					if (t.isAlive()) {
+						try {
+							synchronized (t) {
+								t.wait(1000);
+							}
+						} catch (Exception ignored) {}
+					}
+				}
+			}
 			return;
 		}
 		if (sequence instanceof MaDll) {
@@ -779,7 +856,65 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 			boolean b = true;
 			while (playerThread != null && loopCount != 0) {
 				complete = false;
-				if (sequence instanceof Sequence) {
+				if (audio3d != null) {
+					// JSR-234 3D: the Audio3D pump drives playback, no 2D backend is used
+					if (b) {
+						notifyListeners(PlayerListener.STARTED, getMediaTime(), false);
+						b = false;
+					}
+					if (sequence instanceof emulator.javazoom.jl.player.Player) {
+						// MP3: the javazoom decoder pushes samples into the 3D channel
+						// as play() runs in real time; it returns per pass
+						int lc = this.loopCount;
+						while (playerThread != null && !stop) {
+							audio3d.startFeeding(lc);
+							try {
+								((emulator.javazoom.jl.player.Player) sequence).play(Integer.MAX_VALUE);
+							} catch (JavaLayerException e) {
+								e.printStackTrace();
+								notifyListeners(PlayerListener.ERROR, e.toString(), false);
+								break;
+							}
+							if (stop) break;
+							// play() returns false both at end-of-stream and on pause;
+							// isComplete() distinguishes the two
+							if (!((emulator.javazoom.jl.player.Player) sequence).isComplete()) break;
+							// pass done: mark the stream exhausted and wait until the
+							// pump has drained the tail of the ring and the queue
+							audio3d.mpegPassEnded();
+							long wend = System.currentTimeMillis() + 1500;
+							synchronized (playLock) {
+								while (!stop && !this.complete && System.currentTimeMillis() < wend) {
+									try {
+										playLock.wait(50);
+									} catch (InterruptedException ignored) {}
+								}
+							}
+							if (stop) break;
+							if (lc != -1 && lc <= 1) {
+								complete = true;
+								break;
+							}
+							if (lc > 1) lc--;
+							audio3d.stopFeeding();
+							audio3d.newMpegPass();
+							this.complete = false;
+						}
+					} else {
+						// PCM: the pump owns the pass/loop policy (seamless loops)
+						audio3d.startFeeding(this.loopCount);
+						synchronized (playLock) {
+							if (!stop) {
+								try {
+									playLock.wait();
+								} catch (InterruptedException ignored) {}
+							}
+						}
+					}
+					audio3d.stopFeeding();
+					complete = this.complete;
+					break;
+				} else if (sequence instanceof Sequence) {
 					Sequencer sequencer = null;
 					if (globalMidi) {
 						EmulatorMIDI.start(this, (Sequence) sequence, mediaTime);
@@ -958,6 +1093,30 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 	public byte[] getData() {
 		if (data == null) return null;
 		return data.clone();
+	}
+
+	/** The current backend (Clip / Sequence / javazoom Player / MaDll); for 3D attachment. */
+	public Object getSequence() {
+		return sequence;
+	}
+
+	/** Replaces the backend (used when the 3D MP3 decoder is rebuilt). */
+	public void setSequence(Object newSequence) {
+		sequence = newSequence;
+	}
+
+	/** Raw decoded PCM (WAV/AMR) captured at realize time; null when not available. */
+	public byte[] getRawPCM() {
+		return rawPCM;
+	}
+
+	public AudioFormat getRawPCMFormat() {
+		return rawPCMFormat;
+	}
+
+	/** Current volume level 0..100; used by the 3D pump for the gain calculation. */
+	public int getLevel() {
+		return level;
 	}
 
 	public String getExportName() {

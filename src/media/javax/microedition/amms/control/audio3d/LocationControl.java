@@ -13,5 +13,5 @@ public interface LocationControl extends Control {
 
 	void setCartesian(int x, int y, int z);
 
-	void setSpherical(int magnitude, int azimuth, int polar);
+	void setSpherical(int azimuth, int elevation, int radius);
 }

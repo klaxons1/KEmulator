@@ -13,7 +13,7 @@ public interface DopplerControl extends Control {
 
 	void setVelocityCartesian(int x, int y, int z);
 
-	void setVelocitySpherical(int magnitude, int azimuth, int polar);
+	void setVelocitySpherical(int azimuth, int elevation, int radius);
 
 	boolean isEnabled();
 
