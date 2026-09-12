@@ -3,48 +3,54 @@ package javax.microedition.amms.control;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface FormatControl extends Control {
-	public static final int METADATA_NOT_SUPPORTED = 0;
-	public static final int METADATA_SUPPORTED_FIXED_KEYS = 1;
-	public static final int METADATA_SUPPORTED_FREE_KEYS = 2;
-	public static final String PARAM_BITRATE = "bitrate";
-	public static final String PARAM_BITRATE_TYPE = "bitrate type";
-	public static final String PARAM_SAMPLERATE = "sample rate";
-	public static final String PARAM_FRAMERATE = "frame rate";
-	public static final String PARAM_QUALITY = "quality";
-	public static final String PARAM_VERSION_TYPE = "version type";
+/**
+ * FormatControl controls the format used for storing media.
+ * It is a super interface for ContainerFormatControl, ImageFormatControl,
+ * AudioFormatControl and VideoFormatControl.
+ */
+public interface FormatControl extends Control {
+	int METADATA_NOT_SUPPORTED = 0;
+	int METADATA_SUPPORTED_FIXED_KEYS = 1;
+	int METADATA_SUPPORTED_FREE_KEYS = 2;
 
-	public abstract String[] getSupportedFormats();
+	String PARAM_BITRATE = "bitrate";
+	String PARAM_BITRATE_TYPE = "bitrate type";
+	String PARAM_SAMPLERATE = "sample rate";
+	String PARAM_FRAMERATE = "frame rate";
+	String PARAM_QUALITY = "quality";
+	String PARAM_VERSION_TYPE = "version type";
 
-	public abstract String[] getSupportedStrParameters();
+	String[] getSupportedFormats();
 
-	public abstract String[] getSupportedIntParameters();
+	String getFormat();
 
-	public abstract String[] getSupportedStrParameterValues(String paramString);
+	void setFormat(String format);
 
-	public abstract int[] getSupportedIntParameterRange(String paramString);
+	String[] getSupportedIntParameters();
 
-	public abstract void setFormat(String paramString);
+	String[] getSupportedStrParameters();
 
-	public abstract String getFormat();
+	int[] getSupportedIntParameterRange(String parameter);
 
-	public abstract int setParameter(String paramString, int paramInt);
+	String[] getSupportedStrParameterValues(String parameter);
 
-	public abstract void setParameter(String paramString1, String paramString2);
+	int setParameter(String parameter, int value);
 
-	public abstract String getStrParameterValue(String paramString);
+	void setParameter(String parameter, String value);
 
-	public abstract int getIntParameterValue(String paramString);
+	int getIntParameterValue(String parameter);
 
-	public abstract int getEstimatedBitRate() throws MediaException;
+	String getStrParameterValue(String parameter);
 
-	public abstract void setMetadata(String paramString1, String paramString2) throws MediaException;
+	int getEstimatedBitRate() throws MediaException;
 
-	public abstract String[] getSupportedMetadataKeys();
+	void setMetadata(String key, String value) throws MediaException;
 
-	public abstract int getMetadataSupportMode();
+	String[] getSupportedMetadataKeys();
 
-	public abstract void setMetadataOverride(boolean paramBoolean);
+	int getMetadataSupportMode();
 
-	public abstract boolean getMetadataOverride();
+	void setMetadataOverride(boolean override);
+
+	boolean getMetadataOverride();
 }

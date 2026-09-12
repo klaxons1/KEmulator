@@ -3,38 +3,44 @@ package javax.microedition.amms.control.camera;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface ExposureControl extends Control {
-	public abstract int[] getSupportedFStops();
+/**
+ * ExposureControl controls the exposure settings of the camera device.
+ * Exposure is based on three components: aperture, shutter speed
+ * (exposure time) and sensitivity.
+ */
+public interface ExposureControl extends Control {
 
-	public abstract int getFStop();
+	int[] getSupportedFStops();
 
-	public abstract void setFStop(int paramInt) throws MediaException;
+	int getFStop();
 
-	public abstract int getMinExposureTime();
+	void setFStop(int aperture) throws MediaException;
 
-	public abstract int getMaxExposureTime();
+	int getMinExposureTime();
 
-	public abstract int getExposureTime();
+	int getMaxExposureTime();
 
-	public abstract int setExposureTime(int paramInt) throws MediaException;
+	int getExposureTime();
 
-	public abstract int[] getSupportedISOs();
+	int setExposureTime(int time) throws MediaException;
 
-	public abstract int getISO();
+	int[] getSupportedISOs();
 
-	public abstract void setISO(int paramInt) throws MediaException;
+	int getISO();
 
-	public abstract int[] getSupportedExposureCompensations();
+	void setISO(int iso) throws MediaException;
 
-	public abstract int getExposureCompensation();
+	int[] getSupportedExposureCompensations();
 
-	public abstract void setExposureCompensation(int paramInt) throws MediaException;
+	int getExposureCompensation();
 
-	public abstract int getExposureValue();
+	void setExposureCompensation(int ec) throws MediaException;
 
-	public abstract String[] getSupportedLightMeterings();
+	int getExposureValue();
 
-	public abstract void setLightMetering(String paramString);
+	String[] getSupportedLightMeterings();
 
-	public abstract String getLightMetering();
+	void setLightMetering(String metering);
+
+	String getLightMetering();
 }

@@ -2,12 +2,17 @@ package javax.microedition.amms.control.imageeffect;
 
 import javax.microedition.amms.control.EffectControl;
 
-public abstract interface ImageTransformControl extends EffectControl {
-	public abstract int getSourceWidth();
+/**
+ * ImageTransformControl is an interface for manipulating the size and
+ * position of the image (cropping, scaling, rotation, etc.).
+ */
+public interface ImageTransformControl extends EffectControl {
 
-	public abstract int getSourceHeight();
+	int getSourceWidth();
 
-	public abstract void setSourceRect(int paramInt1, int paramInt2, int paramInt3, int paramInt4);
+	int getSourceHeight();
 
-	public abstract void setTargetSize(int paramInt1, int paramInt2, int paramInt3);
+	void setSourceRect(int x, int y, int w, int h);
+
+	void setTargetSize(int w, int h, int scale);
 }

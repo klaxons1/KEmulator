@@ -2,28 +2,32 @@ package javax.microedition.amms.control.camera;
 
 import javax.microedition.media.Control;
 
-public abstract interface SnapshotControl extends Control {
-	public static final String SHOOTING_STOPPED = "SHOOTING_STOPPED";
-	public static final String STORAGE_ERROR = "STORAGE_ERROR";
-	public static final String WAITING_UNFREEZE = "WAITING_UNFREEZE";
-	public static final int FREEZE = -2;
-	public static final int FREEZE_AND_CONFIRM = -1;
+/**
+ * SnapshotControl allows the user to control the capturing of images
+ * (snapshots) from the camera.
+ */
+public interface SnapshotControl extends Control {
+	String SHOOTING_STOPPED = "SHOOTING_STOPPED";
+	String STORAGE_ERROR = "STORAGE_ERROR";
+	String WAITING_UNFREEZE = "WAITING_UNFREEZE";
+	int FREEZE = -2;
+	int FREEZE_AND_CONFIRM = -1;
 
-	public abstract void setDirectory(String paramString);
+	void setDirectory(String dir);
 
-	public abstract String getDirectory();
+	String getDirectory();
 
-	public abstract void setFilePrefix(String paramString);
+	void setFilePrefix(String prefix);
 
-	public abstract String getFilePrefix();
+	String getFilePrefix();
 
-	public abstract void setFileSuffix(String paramString);
+	void setFileSuffix(String suffix);
 
-	public abstract String getFileSuffix();
+	String getFileSuffix();
 
-	public abstract void start(int paramInt) throws SecurityException;
+	void start(int delay) throws SecurityException;
 
-	public abstract void stop();
+	void stop();
 
-	public abstract void unfreeze(boolean paramBoolean);
+	void unfreeze(boolean freeze);
 }

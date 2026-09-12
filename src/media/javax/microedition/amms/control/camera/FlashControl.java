@@ -2,19 +2,22 @@ package javax.microedition.amms.control.camera;
 
 import javax.microedition.media.Control;
 
-public abstract interface FlashControl extends Control {
-	public static final int OFF = 1;
-	public static final int AUTO = 2;
-	public static final int AUTO_WITH_REDEYEREDUCE = 3;
-	public static final int FORCE = 4;
-	public static final int FORCE_WITH_REDEYEREDUCE = 5;
-	public static final int FILLIN = 6;
+/**
+ * FlashControl controls the features of the camera flash device.
+ */
+public interface FlashControl extends Control {
+	int OFF = 1;
+	int AUTO = 2;
+	int AUTO_WITH_REDEYEREDUCE = 3;
+	int FORCE = 4;
+	int FORCE_WITH_REDEYEREDUCE = 5;
+	int FILLIN = 6;
 
-	public abstract int[] getSupportedModes();
+	int[] getSupportedModes();
 
-	public abstract void setMode(int paramInt);
+	void setMode(int mode);
 
-	public abstract int getMode();
+	int getMode();
 
-	public abstract boolean isFlashReady();
+	boolean isFlashReady();
 }

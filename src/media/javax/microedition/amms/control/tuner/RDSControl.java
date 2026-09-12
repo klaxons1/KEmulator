@@ -2,44 +2,49 @@ package javax.microedition.amms.control.tuner;
 
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
+
 import java.util.Date;
 
-public abstract interface RDSControl extends Control {
-	public static final String RDS_NEW_DATA = "RDS_NEW_DATA";
-	public static final String RDS_NEW_ALARM = "RDS_ALARM";
-	public static final String RADIO_CHANGED = "radio_changed";
+/**
+ * RDSControl controls the features of a tuner with RDS
+ * (Radio Data System) support.
+ */
+public interface RDSControl extends Control {
+	String RDS_NEW_DATA = "RDS_NEW_DATA";
+	String RDS_NEW_ALARM = "RDS_ALARM";
+	String RADIO_CHANGED = "radio_changed";
 
-	public abstract boolean isRDSSignal();
+	boolean isRDSSignal();
 
-	public abstract String getPS();
+	String getPS();
 
-	public abstract String getRT();
+	String getRT();
 
-	public abstract short getPTY();
+	short getPTY();
 
-	public abstract String getPTYString(boolean paramBoolean);
+	String getPTYString(boolean useStringTable);
 
-	public abstract short getPI();
+	short getPI();
 
-	public abstract int[] getFreqsByPTY(short paramShort);
+	int[] getFreqsByPTY(short pty);
 
-	public abstract int[][] getFreqsByTA(boolean paramBoolean);
+	int[][] getFreqsByTA(boolean useTA);
 
-	public abstract String[] getPSByPTY(short paramShort);
+	String[] getPSByPTY(short pty);
 
-	public abstract String[] getPSByTA(boolean paramBoolean);
+	String[] getPSByTA(boolean useTA);
 
-	public abstract Date getCT();
+	Date getCT();
 
-	public abstract boolean getTA();
+	boolean getTA();
 
-	public abstract boolean getTP();
+	boolean getTP();
 
-	public abstract void setAutomaticSwitching(boolean paramBoolean) throws MediaException;
+	void setAutomaticSwitching(boolean state) throws MediaException;
 
-	public abstract boolean getAutomaticSwitching();
+	boolean getAutomaticSwitching();
 
-	public abstract void setAutomaticTA(boolean paramBoolean) throws MediaException;
+	void setAutomaticTA(boolean state) throws MediaException;
 
-	public abstract boolean getAutomaticTA();
+	boolean getAutomaticTA();
 }

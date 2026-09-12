@@ -3,33 +3,36 @@ package javax.microedition.amms.control.camera;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface CameraControl extends Control {
-	public static final int ROTATE_LEFT = 2;
-	public static final int ROTATE_RIGHT = 3;
-	public static final int ROTATE_NONE = 1;
-	public static final int UNKNOWN = -1004;
+/**
+ * CameraControl controls the features of the camera device.
+ */
+public interface CameraControl extends Control {
+	int ROTATE_NONE = 1;
+	int ROTATE_LEFT = 2;
+	int ROTATE_RIGHT = 3;
+	int UNKNOWN = -1004;
 
-	public abstract int getCameraRotation();
+	int getCameraRotation();
 
-	public abstract void enableShutterFeedback(boolean paramBoolean) throws MediaException;
+	void enableShutterFeedback(boolean enable) throws MediaException;
 
-	public abstract boolean isShutterFeedbackEnabled();
+	boolean isShutterFeedbackEnabled();
 
-	public abstract String[] getSupportedExposureModes();
+	String[] getSupportedExposureModes();
 
-	public abstract void setExposureMode(String paramString);
+	void setExposureMode(String mode);
 
-	public abstract String getExposureMode();
+	String getExposureMode();
 
-	public abstract int[] getSupportedVideoResolutions();
+	int[] getSupportedVideoResolutions();
 
-	public abstract int[] getSupportedStillResolutions();
+	int[] getSupportedStillResolutions();
 
-	public abstract void setVideoResolution(int paramInt);
+	void setVideoResolution(int index);
 
-	public abstract void setStillResolution(int paramInt);
+	void setStillResolution(int index);
 
-	public abstract int getVideoResolution();
+	int getVideoResolution();
 
-	public abstract int getStillResolution();
+	int getStillResolution();
 }

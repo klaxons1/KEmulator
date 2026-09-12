@@ -2,19 +2,23 @@ package javax.microedition.amms.control.imageeffect;
 
 import javax.microedition.amms.control.EffectControl;
 
-public abstract interface WhiteBalanceControl extends EffectControl {
-	public static final int AUTO = -1000;
-	public static final int NEXT = -1001;
-	public static final int PREVIOUS = -1002;
-	public static final int UNKNOWN = -1004;
+/**
+ * WhiteBalanceControl is an interface for manipulating the white balance
+ * of an image.
+ */
+public interface WhiteBalanceControl extends EffectControl {
+	int AUTO = -1000;
+	int NEXT = -1001;
+	int PREVIOUS = -1002;
+	int UNKNOWN = -1004;
 
-	public abstract int setColorTemp(int paramInt);
+	int setColorTemp(int temp);
 
-	public abstract int getColorTemp();
+	int getColorTemp();
 
-	public abstract int getMinColorTemp();
+	int getMinColorTemp();
 
-	public abstract int getMaxColorTemp();
+	int getMaxColorTemp();
 
-	public abstract int getNumberOfSteps();
+	int getNumberOfSteps();
 }

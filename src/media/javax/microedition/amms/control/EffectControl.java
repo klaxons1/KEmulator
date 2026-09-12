@@ -3,26 +3,30 @@ package javax.microedition.amms.control;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface EffectControl extends Control {
-	public static final int SCOPE_LIVE_ONLY = 1;
-	public static final int SCOPE_RECORD_ONLY = 2;
-	public static final int SCOPE_LIVE_AND_RECORD = 3;
+/**
+ * EffectControl is an interface for controlling an abstract filter
+ * with various preset settings.
+ */
+public interface EffectControl extends Control {
+	int SCOPE_LIVE_ONLY = 1;
+	int SCOPE_RECORD_ONLY = 2;
+	int SCOPE_LIVE_AND_RECORD = 3;
 
-	public abstract void setEnabled(boolean paramBoolean);
+	void setEnabled(boolean enable);
 
-	public abstract boolean isEnabled();
+	boolean isEnabled();
 
-	public abstract void setScope(int paramInt) throws MediaException;
+	void setScope(int scope) throws MediaException;
 
-	public abstract int getScope();
+	int getScope();
 
-	public abstract void setEnforced(boolean paramBoolean);
+	void setEnforced(boolean enforced);
 
-	public abstract boolean isEnforced();
+	boolean isEnforced();
 
-	public abstract void setPreset(String paramString);
+	void setPreset(String preset);
 
-	public abstract String getPreset();
+	String getPreset();
 
-	public abstract String[] getPresetNames();
+	String[] getPresetNames();
 }

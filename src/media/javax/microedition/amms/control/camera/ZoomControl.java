@@ -2,26 +2,29 @@ package javax.microedition.amms.control.camera;
 
 import javax.microedition.media.Control;
 
-public abstract interface ZoomControl extends Control {
-	public static final int NEXT = -1001;
-	public static final int PREVIOUS = -1002;
-	public static final int UNKNOWN = -1004;
+/**
+ * ZoomControl allows the user to control the zooming of the camera.
+ */
+public interface ZoomControl extends Control {
+	int NEXT = -1001;
+	int PREVIOUS = -1002;
+	int UNKNOWN = -1004;
 
-	public abstract int setOpticalZoom(int paramInt);
+	int setOpticalZoom(int zoom);
 
-	public abstract int getOpticalZoom();
+	int getOpticalZoom();
 
-	public abstract int getMaxOpticalZoom();
+	int getMaxOpticalZoom();
 
-	public abstract int getOpticalZoomLevels();
+	int getOpticalZoomLevels();
 
-	public abstract int getMinFocalLength();
+	int getMinFocalLength();
 
-	public abstract int setDigitalZoom(int paramInt);
+	int setDigitalZoom(int zoom);
 
-	public abstract int getDigitalZoom();
+	int getDigitalZoom();
 
-	public abstract int getMaxDigitalZoom();
+	int getMaxDigitalZoom();
 
-	public abstract int getDigitalZoomLevels();
+	int getDigitalZoomLevels();
 }

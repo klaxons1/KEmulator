@@ -2,26 +2,30 @@ package javax.microedition.amms.control.imageeffect;
 
 import javax.microedition.amms.control.EffectControl;
 
-public abstract interface ImageTonalityControl extends EffectControl {
-	public static final int AUTO = -1000;
-	public static final int NEXT = -1001;
-	public static final int PREVIOUS = -1002;
+/**
+ * ImageTonalityControl is an interface for manipulating the tonality
+ * (brightness, contrast and gamma) of an image.
+ */
+public interface ImageTonalityControl extends EffectControl {
+	int AUTO = -1000;
+	int NEXT = -1001;
+	int PREVIOUS = -1002;
 
-	public abstract int setBrightness(int paramInt);
+	int setBrightness(int brightness);
 
-	public abstract int getBrightness();
+	int getBrightness();
 
-	public abstract int getBrightnessLevels();
+	int getBrightnessLevels();
 
-	public abstract int setContrast(int paramInt);
+	int setContrast(int contrast);
 
-	public abstract int getContrast();
+	int getContrast();
 
-	public abstract int getContrastLevels();
+	int getContrastLevels();
 
-	public abstract int setGamma(int paramInt);
+	int setGamma(int gamma);
 
-	public abstract int getGamma();
+	int getGamma();
 
-	public abstract int getGammaLevels();
+	int getGammaLevels();
 }

@@ -2,10 +2,15 @@ package javax.microedition.amms.control;
 
 import javax.microedition.media.Control;
 
-public abstract interface EffectOrderControl extends Control {
-	public abstract int setEffectOrder(EffectControl paramEffectControl, int paramInt);
+/**
+ * EffectOrderControl is an interface designed to specify the order of
+ * effects represented by EffectControls.
+ */
+public interface EffectOrderControl extends Control {
 
-	public abstract int getEffectOrder(EffectControl paramEffectControl);
+	int setEffectOrder(EffectControl effect, int order);
 
-	public abstract EffectControl[] getEffectOrders();
+	int getEffectOrder(EffectControl effect);
+
+	EffectControl[] getEffectOrders();
 }

@@ -1,4 +1,7 @@
 package javax.microedition.amms.control;
 
-public abstract interface VideoFormatControl extends FormatControl {
+/**
+ * VideoFormatControl controls the setting of the video format of the audio-video format.
+ */
+public interface VideoFormatControl extends FormatControl {
 }

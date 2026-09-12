@@ -2,34 +2,32 @@ package javax.microedition.amms.control.audioeffect;
 
 import javax.microedition.amms.control.EffectControl;
 
-public abstract interface EqualizerControl
-		extends EffectControl {
-	public static final int UNDEFINED = -1004;
+/**
+ * EqualizerControl is an audio EffectControl for manipulating the
+ * equalization settings of a Player(s).
+ */
+public interface EqualizerControl extends EffectControl {
+	int UNDEFINED = -1004;
 
-	public abstract int getMinBandLevel();
+	int getNumberOfBands();
 
-	public abstract int getMaxBandLevel();
+	int getCenterFreq(int band) throws IllegalArgumentException;
 
-	public abstract void setBandLevel(int paramInt1, int paramInt2)
-			throws IllegalArgumentException;
+	int getBand(int frequency);
 
-	public abstract int getBandLevel(int paramInt)
-			throws IllegalArgumentException;
+	void setBandLevel(int level, int band) throws IllegalArgumentException;
 
-	public abstract int getNumberOfBands();
+	int getBandLevel(int band) throws IllegalArgumentException;
 
-	public abstract int getCenterFreq(int paramInt)
-			throws IllegalArgumentException;
+	int getMinBandLevel();
 
-	public abstract int getBand(int paramInt);
+	int getMaxBandLevel();
 
-	public abstract int setBass(int paramInt)
-			throws IllegalArgumentException;
+	int setBass(int level) throws IllegalArgumentException;
 
-	public abstract int setTreble(int paramInt)
-			throws IllegalArgumentException;
+	int getBass();
 
-	public abstract int getBass();
+	int setTreble(int level) throws IllegalArgumentException;
 
-	public abstract int getTreble();
+	int getTreble();
 }

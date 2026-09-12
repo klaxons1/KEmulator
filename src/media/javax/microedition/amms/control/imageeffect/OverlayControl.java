@@ -2,18 +2,21 @@ package javax.microedition.amms.control.imageeffect;
 
 import javax.microedition.amms.control.EffectControl;
 
-public abstract interface OverlayControl extends EffectControl {
-	public abstract int insertImage(Object paramObject, int paramInt1, int paramInt2, int paramInt3)
-			throws IllegalArgumentException;
+/**
+ * OverlayControl is an interface for inserting overlays (such as date
+ * stamps or logos) onto the captured image.
+ */
+public interface OverlayControl extends EffectControl {
 
-	public abstract int insertImage(Object paramObject, int paramInt1, int paramInt2, int paramInt3, int paramInt4)
-			throws IllegalArgumentException;
+	int insertImage(Object image, int x, int y, int z) throws IllegalArgumentException;
 
-	public abstract void removeImage(Object paramObject);
+	int insertImage(Object image, int x, int y, int z, int id) throws IllegalArgumentException;
 
-	public abstract Object getImage(int paramInt);
+	void removeImage(Object image);
 
-	public abstract int numberOfImages();
+	Object getImage(int id);
 
-	public abstract void clear();
+	int numberOfImages();
+
+	void clear();
 }

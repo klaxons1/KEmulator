@@ -2,10 +2,15 @@ package javax.microedition.amms.control.audio3d;
 
 import javax.microedition.media.Control;
 
-public abstract interface CommitControl extends Control {
-	public abstract void commit();
+/**
+ * CommitControl is used to control the time at which the current changes
+ * to a control should take effect.
+ */
+public interface CommitControl extends Control {
 
-	public abstract boolean isDeferred();
+	void commit();
 
-	public abstract void setDeferred(boolean paramBoolean);
+	boolean isDeferred();
+
+	void setDeferred(boolean deferred);
 }

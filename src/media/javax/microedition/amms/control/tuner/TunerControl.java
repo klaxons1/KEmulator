@@ -3,50 +3,53 @@ package javax.microedition.amms.control.tuner;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface TunerControl extends Control {
-	public static final int MONO = 1;
-	public static final int STEREO = 2;
-	public static final int AUTO = 3;
-	public static final String MODULATION_FM = "fm";
-	public static final String MODULATION_AM = "am";
+/**
+ * TunerControl controls the features of a tuner (AM/FM radio).
+ */
+public interface TunerControl extends Control {
+	int MONO = 1;
+	int STEREO = 2;
+	int AUTO = 3;
+	String MODULATION_FM = "fm";
+	String MODULATION_AM = "am";
 
-	public abstract int getMinFreq(String paramString);
+	int getMinFreq(String modulation);
 
-	public abstract int getMaxFreq(String paramString);
+	int getMaxFreq(String modulation);
 
-	public abstract int setFrequency(int paramInt, String paramString);
+	int setFrequency(int freq, String modulation);
 
-	public abstract int getFrequency();
+	int getFrequency();
 
-	public abstract int seek(int paramInt, String paramString, boolean paramBoolean) throws MediaException;
+	int seek(int step, String modulation, boolean squelch) throws MediaException;
 
-	public abstract boolean getSquelch();
+	boolean getSquelch();
 
-	public abstract void setSquelch(boolean paramBoolean) throws MediaException;
+	void setSquelch(boolean state) throws MediaException;
 
-	public abstract String getModulation();
+	String getModulation();
 
-	public abstract int getSignalStrength() throws MediaException;
+	int getSignalStrength() throws MediaException;
 
-	public abstract int getStereoMode();
+	int getStereoMode();
 
-	public abstract void setStereoMode(int paramInt);
+	void setStereoMode(int stereoMode);
 
-	public abstract int getNumberOfPresets();
+	int getNumberOfPresets();
 
-	public abstract void usePreset(int paramInt);
+	void usePreset(int preset);
 
-	public abstract void setPreset(int paramInt);
+	void setPreset(int preset);
 
-	public abstract void setPreset(int paramInt1, int paramInt2, String paramString, int paramInt3);
+	void setPreset(int preset, int freq, String modulation, int stereoMode);
 
-	public abstract int getPresetFrequency(int paramInt);
+	int getPresetFrequency(int preset);
 
-	public abstract String getPresetModulation(int paramInt);
+	String getPresetModulation(int preset);
 
-	public abstract int getPresetStereoMode(int paramInt) throws MediaException;
+	int getPresetStereoMode(int preset) throws MediaException;
 
-	public abstract String getPresetName(int paramInt);
+	String getPresetName(int preset);
 
-	public abstract void setPresetName(int paramInt, String paramString);
+	void setPresetName(int preset, String name);
 }

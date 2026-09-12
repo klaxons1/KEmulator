@@ -2,8 +2,14 @@ package javax.microedition.amms.control;
 
 import javax.microedition.media.Control;
 
-public abstract interface MIDIChannelControl extends Control {
-	public abstract Control getChannelControl(String paramString, int paramInt);
+/**
+ * MIDIChannelControl is a Control that gives access to MIDI-channel-specific
+ * Controls. Essentially, it provides the same functionality as Controllable,
+ * but per channel, not per Player.
+ */
+public interface MIDIChannelControl extends Control {
 
-	public abstract Control[] getChannelControls(int paramInt);
+	Control getChannelControl(String controlType, int channel);
+
+	Control[] getChannelControls(int channel);
 }

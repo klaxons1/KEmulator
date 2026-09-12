@@ -2,10 +2,15 @@ package javax.microedition.amms.control.audio3d;
 
 import javax.microedition.media.Control;
 
-public abstract interface OrientationControl extends Control {
-	public abstract int[] getOrientationVectors();
+/**
+ * OrientationControl is an interface for manipulating the virtual
+ * orientation of an object in the virtual acoustical space.
+ */
+public interface OrientationControl extends Control {
 
-	public abstract void setOrientation(int[] paramArrayOfInt1, int[] paramArrayOfInt2) throws IllegalArgumentException;
+	int[] getOrientationVectors();
 
-	public abstract void setOrientation(int paramInt1, int paramInt2, int paramInt3);
+	void setOrientation(int[] frontVector, int[] aboveVector) throws IllegalArgumentException;
+
+	void setOrientation(int heading, int pitch, int roll);
 }

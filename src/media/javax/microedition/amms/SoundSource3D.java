@@ -1,4 +1,7 @@
 package javax.microedition.amms;
 
-public abstract interface SoundSource3D extends Module {
+/**
+ * SoundSource3D represents a sound source in a virtual acoustical space.
+ */
+public interface SoundSource3D extends Module {
 }

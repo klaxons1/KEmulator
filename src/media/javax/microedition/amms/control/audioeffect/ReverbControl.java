@@ -3,16 +3,18 @@ package javax.microedition.amms.control.audioeffect;
 import javax.microedition.amms.control.EffectControl;
 import javax.microedition.media.MediaException;
 
-public abstract interface ReverbControl
-		extends EffectControl {
-	public abstract int setReverbLevel(int paramInt)
-			throws IllegalArgumentException;
+/**
+ * ReverbControl is an interface for manipulating the settings of an audio
+ * effect called reverb. A ReverbControl can only be fetched from the
+ * GlobalManager and/or MediaProcessor (if ReverbControl is supported at all).
+ */
+public interface ReverbControl extends EffectControl {
 
-	public abstract int getReverbLevel();
+	int setReverbLevel(int level) throws IllegalArgumentException;
 
-	public abstract void setReverbTime(int paramInt)
-			throws IllegalArgumentException, MediaException;
+	int getReverbLevel();
 
-	public abstract int getReverbTime()
-			throws MediaException;
+	void setReverbTime(int time) throws IllegalArgumentException, MediaException;
+
+	int getReverbTime() throws MediaException;
 }

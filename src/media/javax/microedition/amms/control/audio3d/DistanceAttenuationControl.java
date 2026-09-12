@@ -2,14 +2,20 @@ package javax.microedition.amms.control.audio3d;
 
 import javax.microedition.media.Control;
 
-public abstract interface DistanceAttenuationControl extends Control {
-	public abstract int getMaxDistance();
+/**
+ * DistanceAttenuationControl is an interface for controlling how the sound
+ * from a sound source is attenuated with its distance from the Spectator.
+ * Distances are specified in millimeters and the rolloff factor in thousandths.
+ */
+public interface DistanceAttenuationControl extends Control {
 
-	public abstract int getMinDistance();
+	int getMinDistance();
 
-	public abstract boolean getMuteAfterMax();
+	int getMaxDistance();
 
-	public abstract int getRolloffFactor();
+	boolean getMuteAfterMax();
 
-	public abstract void setParameters(int paramInt1, int paramInt2, boolean paramBoolean, int paramInt3);
+	int getRolloffFactor();
+
+	void setParameters(int minDistance, int maxDistance, boolean muteAfterMax, int rolloffFactor);
 }

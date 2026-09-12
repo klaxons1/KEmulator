@@ -4,12 +4,19 @@ import javax.microedition.media.Controllable;
 import javax.microedition.media.MediaException;
 import javax.microedition.media.Player;
 
-public abstract interface Module extends Controllable {
-	public abstract void addMIDIChannel(Player paramPlayer, int paramInt) throws MediaException;
+/**
+ * Module is a logical group of Players and/or MIDI channels.
+ * <p>
+ * Adding or removing Players or MIDI channels is not possible if any of
+ * the Players is in UNREALIZED, PREFETCHED or STARTED state.
+ */
+public interface Module extends Controllable {
 
-	public abstract void addPlayer(Player paramPlayer) throws MediaException;
+	void addPlayer(Player player) throws MediaException;
 
-	public abstract void removeMIDIChannel(Player paramPlayer, int paramInt);
+	void removePlayer(Player player);
 
-	public abstract void removePlayer(Player paramPlayer);
+	void addMIDIChannel(Player player, int channel) throws MediaException;
+
+	void removeMIDIChannel(Player player, int channel);
 }

@@ -2,12 +2,19 @@ package javax.microedition.amms.control.audio3d;
 
 import javax.microedition.media.Control;
 
-public abstract interface ObstructionControl extends Control {
-	public abstract int getHFLevel();
+/**
+ * ObstructionControl provides a mechanism to control the overall level of
+ * an audio signal flowing directly from a sound source to the Spectator,
+ * and to attenuate the high frequency components of the signal.
+ * Levels are specified in millibels.
+ */
+public interface ObstructionControl extends Control {
 
-	public abstract int getLevel();
+	int getLevel();
 
-	public abstract void setHFLevel(int paramInt);
+	void setLevel(int level);
 
-	public abstract void setLevel(int paramInt);
+	int getHFLevel();
+
+	void setHFLevel(int HFLevel);
 }

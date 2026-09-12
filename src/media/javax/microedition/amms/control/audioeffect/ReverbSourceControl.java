@@ -3,12 +3,15 @@ package javax.microedition.amms.control.audioeffect;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface ReverbSourceControl
-		extends Control {
-	public static final int DISCONNECT = Integer.MAX_VALUE;
+/**
+ * ReverbSourceControl is an interface for manipulating the feeding from an
+ * object to the audio effect called reverb. A ReverbSourceControl can only
+ * be fetched from an EffectModule or a SoundSource3D.
+ */
+public interface ReverbSourceControl extends Control {
+	int DISCONNECT = Integer.MAX_VALUE;
 
-	public abstract void setRoomLevel(int paramInt)
-			throws MediaException;
+	void setRoomLevel(int level) throws MediaException;
 
-	public abstract int getRoomLevel();
+	int getRoomLevel();
 }

@@ -1,5 +1,9 @@
 package javax.microedition.amms.control;
 
-public abstract interface ImageFormatControl extends FormatControl {
-	public abstract int getEstimatedImageSize();
+/**
+ * ImageFormatControl controls the setting of the image format.
+ */
+public interface ImageFormatControl extends FormatControl {
+
+	int getEstimatedImageSize();
 }

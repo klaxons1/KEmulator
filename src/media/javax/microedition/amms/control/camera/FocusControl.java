@@ -3,28 +3,31 @@ package javax.microedition.amms.control.camera;
 import javax.microedition.media.Control;
 import javax.microedition.media.MediaException;
 
-public abstract interface FocusControl extends Control {
-	public static final int AUTO = -1000;
-	public static final int AUTO_LOCK = -1005;
-	public static final int NEXT = -1001;
-	public static final int PREVIOUS = -1002;
-	public static final int UNKNOWN = -1004;
+/**
+ * FocusControl controls the focus of the camera.
+ */
+public interface FocusControl extends Control {
+	int AUTO = -1000;
+	int NEXT = -1001;
+	int PREVIOUS = -1002;
+	int UNKNOWN = -1004;
+	int AUTO_LOCK = -1005;
 
-	public abstract int setFocus(int paramInt) throws MediaException;
+	int setFocus(int focus) throws MediaException;
 
-	public abstract int getFocus();
+	int getFocus();
 
-	public abstract int getMinFocus();
+	int getMinFocus();
 
-	public abstract int getFocusSteps();
+	int getFocusSteps();
 
-	public abstract boolean isManualFocusSupported();
+	boolean isManualFocusSupported();
 
-	public abstract boolean isAutoFocusSupported();
+	boolean isAutoFocusSupported();
 
-	public abstract boolean isMacroSupported();
+	boolean isMacroSupported();
 
-	public abstract void setMacro(boolean paramBoolean) throws MediaException;
+	void setMacro(boolean state) throws MediaException;
 
-	public abstract boolean getMacro();
+	boolean getMacro();
 }

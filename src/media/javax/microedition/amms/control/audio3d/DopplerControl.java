@@ -2,14 +2,20 @@ package javax.microedition.amms.control.audio3d;
 
 import javax.microedition.media.Control;
 
-public abstract interface DopplerControl extends Control {
-	public abstract int[] getVelocityCartesian();
+/**
+ * DopplerControl is an interface for enabling and setting the velocity
+ * of an object for the Doppler effect. Velocities are specified in
+ * millimeters per second.
+ */
+public interface DopplerControl extends Control {
 
-	public abstract boolean isEnabled();
+	int[] getVelocityCartesian();
 
-	public abstract void setEnabled(boolean paramBoolean);
+	void setVelocityCartesian(int x, int y, int z);
 
-	public abstract void setVelocityCartesian(int paramInt1, int paramInt2, int paramInt3);
+	void setVelocitySpherical(int magnitude, int azimuth, int polar);
 
-	public abstract void setVelocitySpherical(int paramInt1, int paramInt2, int paramInt3);
+	boolean isEnabled();
+
+	void setEnabled(boolean enabled);
 }

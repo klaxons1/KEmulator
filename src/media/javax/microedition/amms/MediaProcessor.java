@@ -2,35 +2,39 @@ package javax.microedition.amms;
 
 import javax.microedition.media.Controllable;
 import javax.microedition.media.MediaException;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public abstract interface MediaProcessor extends Controllable {
-	public static final int REALIZED = 200;
-	public static final int STARTED = 400;
-	public static final int STOPPED = 300;
-	public static final int UNKNOWN = -1;
-	public static final int UNREALIZED = 100;
+/**
+ * MediaProcessor is an interface designed to post-process different media types.
+ */
+public interface MediaProcessor extends Controllable {
+	int UNREALIZED = 100;
+	int REALIZED = 200;
+	int STOPPED = 300;
+	int STARTED = 400;
+	int UNKNOWN = -1;
 
-	public abstract void abort();
+	void setInput(InputStream input, int length) throws MediaException;
 
-	public abstract void addMediaProcessorListener(MediaProcessorListener paramMediaProcessorListener);
+	void setInput(Object image) throws MediaException;
 
-	public abstract void complete() throws MediaException;
+	void setOutput(OutputStream output);
 
-	public abstract int getProgress();
+	void start() throws MediaException;
 
-	public abstract int getState();
+	void stop() throws MediaException;
 
-	public abstract void removeMediaProcessorListener(MediaProcessorListener paramMediaProcessorListener);
+	void abort();
 
-	public abstract void setInput(InputStream paramInputStream, int paramInt) throws MediaException;
+	void complete() throws MediaException;
 
-	public abstract void setInput(Object paramObject) throws MediaException;
+	int getState();
 
-	public abstract void setOutput(OutputStream paramOutputStream);
+	int getProgress();
 
-	public abstract void start() throws MediaException;
+	void addMediaProcessorListener(MediaProcessorListener mediaProcessorListener);
 
-	public abstract void stop() throws MediaException;
+	void removeMediaProcessorListener(MediaProcessorListener mediaProcessorListener);
 }

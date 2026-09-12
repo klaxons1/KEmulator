@@ -1,4 +1,7 @@
 package javax.microedition.amms.control;
 
-public abstract interface AudioFormatControl extends FormatControl {
+/**
+ * AudioFormatControl controls the setting of the audio format.
+ */
+public interface AudioFormatControl extends FormatControl {
 }
