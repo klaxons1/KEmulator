@@ -5,6 +5,7 @@ import javax.microedition.amms.control.audio3d.DopplerControl;
 import javax.microedition.amms.control.audio3d.LocationControl;
 import javax.microedition.amms.control.audio3d.OrientationControl;
 import javax.microedition.media.Control;
+import javax.microedition.media.Controllable;
 import javax.microedition.media.MediaException;
 
 /**
