@@ -91,7 +91,7 @@ public class Source3DChannel {
 			attachMpegDevice();
 		} else {
 			if (playerImpl.getRawPCM() == null) {
-				throw new MediaException("Player type is not supported for 3D audio");
+				throw new MediaException("PCM data is not available for this player (unsupported format or WAV realize failed; supported: 8/16-bit PCM WAV, AMR, MP3)");
 			}
 			pcm = playerImpl.getRawPCM();
 			AudioFormat f = playerImpl.getRawPCMFormat();

@@ -107,6 +107,7 @@ public final class Audio3DContext {
 				context = null;
 				ready = false;
 				status = "OpenAL is not available (" + t + "). On Windows install OpenAL Soft and put openal32.dll next to KEmulator.jar or on the library path; on Linux install libopenal.";
+				System.err.println("*** " + status);
 			}
 		}
 	}

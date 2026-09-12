@@ -360,7 +360,7 @@ public class SoundSource3DImpl implements SoundSource3D {
 		}
 
 		public void setParameters(int minDistance, int maxDistance, boolean muteAfterMax, int rolloffFactor) {
-			if (minDistance <= 0 || maxDistance <= minDistance || rolloffFactor < 0) {
+			if (minDistance <= 0 || maxDistance < minDistance || rolloffFactor < 0) {
 				throw new IllegalArgumentException("invalid distance attenuation parameters");
 			}
 			SoundSource3DImpl.this.defer(this, new Runnable() {

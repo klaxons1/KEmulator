@@ -150,27 +150,11 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 
 	private void wav(InputStream inputStream, boolean fail) throws IOException {
 		controls = new Control[]{toneControl, volumeControl};
-		byte[] data;
+		byte[] data = null;
 		WavCache key = null;
 		try {
 			if (inputStream instanceof ByteArrayInputStream || Settings.enableMediaDump) {
 				data = ResourceManager.getBytes(inputStream);
-				if (Settings.wavCache) {
-					key = new WavCache(data);
-					synchronized (wavCache) {
-						int i = wavCache.indexOf(key);
-						if (i != -1) {
-							key = wavCache.get(i);
-							sequence = key.clip;
-							cacheRef = key;
-							key.setPlayer(this);
-							setMediaTime(0);
-							return;
-						}
-						wavCache.add(key);
-					}
-				}
-
 				inputStream = this.inputStream = new ByteArrayInputStream(data);
 			}
 
@@ -188,44 +172,54 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 								* 2, format.getFrameRate(), true), audioInputStream);
 				format = audioFormat;
 			}
-		// Read the full PCM into memory; it is also captured for 3D playback.
-		ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
-		byte[] pcmBuf = new byte[4096];
-		int pr;
-		while ((pr = audioInputStream.read(pcmBuf)) != -1) {
-			pcmOut.write(pcmBuf, 0, pr);
-		}
-		final byte[] pcmBytes = pcmOut.toByteArray();
-		if (format.getEncoding() == AudioFormat.Encoding.PCM_SIGNED
-				&& (format.getSampleSizeInBits() == 8 || format.getSampleSizeInBits() == 16)
-				&& format.getChannels() <= 2) {
-			if (format.isBigEndian() && format.getSampleSizeInBits() == 16) {
-				// OpenAL expects native (little-endian) order; the Clip keeps the original bytes
-				byte[] sw = pcmBytes.clone();
-				for (int i = 0; i + 1 < sw.length; i += 2) {
-					byte t = sw[i];
-					sw[i] = sw[i + 1];
-					sw[i + 1] = t;
-				}
-				rawPCM = sw;
-			} else {
-				rawPCM = pcmBytes;
+			// Read the full PCM into memory; it is also captured for 3D playback.
+			ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
+			byte[] pcmBuf = new byte[4096];
+			int pr;
+			while ((pr = audioInputStream.read(pcmBuf)) != -1) {
+				pcmOut.write(pcmBuf, 0, pr);
 			}
-			rawPCMFormat = format;
-		}
-		int frames = pcmBytes.length / Math.max(format.getFrameSize(), 1);
-		AudioInputStream buffered = new AudioInputStream(new ByteArrayInputStream(pcmBytes), format, frames);
-		final Clip clip;
-		(clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, format, frames * format.getFrameSize())))
-				.addLineListener(Settings.wavCache ? key : this);
-		clip.open(buffered);
-		sequence = clip;
+			final byte[] pcmBytes = pcmOut.toByteArray();
+			captureRawPcm(pcmBytes, format);
+			int frames = pcmBytes.length / Math.max(format.getFrameSize(), 1);
+			AudioInputStream buffered = new AudioInputStream(new ByteArrayInputStream(pcmBytes), format, frames);
 
-			if (Settings.wavCache && key != null) {
+			// WavCache: reuse an already-opened clip for identical file bytes.
+			// The PCM capture above runs on every path (including cache hits)
+			// so the player stays usable for 3D audio.
+			boolean cacheHit = false;
+			if (data != null && Settings.wavCache) {
+				key = new WavCache(data);
 				synchronized (wavCache) {
-					key.clip = (Clip) sequence;
+					int i = wavCache.indexOf(key);
+					if (i != -1) {
+						key = wavCache.get(i);
+						cacheHit = true;
+					} else {
+						wavCache.add(key);
+					}
+				}
+			}
+			final Clip clip;
+			if (cacheHit) {
+				clip = key.clip;
+			} else {
+				(clip = (Clip) AudioSystem.getLine(new DataLine.Info(Clip.class, format, frames * format.getFrameSize())))
+						.addLineListener(Settings.wavCache ? key : this);
+				clip.open(buffered);
+			}
+			sequence = clip;
+
+			if (key != null) {
+				synchronized (wavCache) {
+					if (!cacheHit) {
+						key.clip = clip;
+					}
 					key.setPlayer(this);
 					cacheRef = key;
+				}
+				if (cacheHit) {
+					setMediaTime(0);
 				}
 			}
 		} catch (Exception e) {
@@ -233,6 +227,35 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 			Emulator.getEmulator().getLogStream().println("WAV realize error: " + e);
 			sequence = null;
 		}
+	}
+
+	/**
+	 * Captures the raw PCM for JSR-234 3D playback (little-endian, as OpenAL
+	 * expects). Supports mono/stereo 8-bit (signed or unsigned, per the WAV
+	 * spec) and 16-bit signed PCM.
+	 */
+	private void captureRawPcm(byte[] pcmBytes, AudioFormat format) {
+		int bits = format.getSampleSizeInBits();
+		AudioFormat.Encoding enc = format.getEncoding();
+		boolean pcm8 = bits == 8 && (enc == AudioFormat.Encoding.PCM_SIGNED
+				|| enc == AudioFormat.Encoding.PCM_UNSIGNED);
+		boolean pcm16 = bits == 16 && enc == AudioFormat.Encoding.PCM_SIGNED;
+		if ((!pcm8 && !pcm16) || format.getChannels() < 1 || format.getChannels() > 2) {
+			return;
+		}
+		if (format.isBigEndian() && pcm16) {
+			// OpenAL expects native (little-endian) order; the Clip keeps the original bytes
+			byte[] sw = pcmBytes.clone();
+			for (int i = 0; i + 1 < sw.length; i += 2) {
+				byte t = sw[i];
+				sw[i] = sw[i + 1];
+				sw[i + 1] = t;
+			}
+			rawPCM = sw;
+		} else {
+			rawPCM = pcmBytes;
+		}
+		rawPCMFormat = format;
 	}
 
 	private void midi(final InputStream inputStream, boolean fail) throws IOException {
