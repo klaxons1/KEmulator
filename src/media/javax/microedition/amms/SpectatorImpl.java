@@ -50,11 +50,8 @@ public class SpectatorImpl extends Spectator {
 		double[] u = new double[3];
 		Vec3.orientationFromAngles(heading, pitch, roll, f, u);
 		al.alListenerfv(AL.AL_POSITION, new float[]{x / 1000f, y / 1000f, z / 1000f});
-		al.alListenerfv(AL.AL_ORIENTATION, new float[]{f[0], f[1], f[2], u[0], u[1], u[2]});
-	}
-
-	public SpectatorImpl() {
-		super(this);
+		al.alListenerfv(AL.AL_ORIENTATION,
+				new float[]{(float) f[0], (float) f[1], (float) f[2], (float) u[0], (float) u[1], (float) u[2]});
 	}
 
 	@Override

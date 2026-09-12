@@ -4,6 +4,7 @@ import com.sun.jna.Memory;
 import emulator.javazoom.jl.decoder.Bitstream;
 import emulator.javazoom.jl.decoder.Header;
 
+import javax.microedition.amms.SpectatorImpl;
 import javax.microedition.media.MediaException;
 import javax.sound.sampled.AudioFormat;
 

@@ -14,11 +14,19 @@ public class Spectator implements Controllable {
 		this.specImpl = impl;
 	}
 
+	/**
+	 * For implementations that extend Spectator: the control requests are then
+	 * dispatched virtually to the subclass methods.
+	 */
+	Spectator() {
+		this(null);
+	}
+
 	public Control getControl(String controlType) {
-		return this.specImpl.getControl(controlType);
+		return (specImpl == null ? this : specImpl).getControl(controlType);
 	}
 
 	public Control[] getControls() {
-		return this.specImpl.getControls();
+		return (specImpl == null ? this : specImpl).getControls();
 	}
 }
