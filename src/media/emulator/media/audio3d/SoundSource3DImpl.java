@@ -56,7 +56,7 @@ public class SoundSource3DImpl implements SoundSource3D {
 	final DopplerControlImpl dopplerControl = new DopplerControlImpl(this, false);
 	final ObstructionControlImpl obstructionControl = new ObstructionControlImpl(this);
 
-	final Vector<Source3DChannel> channels = new Vector<Source3DChannel>();
+	final Vector<Source3DChannel> channels = new Vector<>();
 
 	/**
 	 * @throws MediaException if the OpenAL context cannot be started.
@@ -87,7 +87,7 @@ public class SoundSource3DImpl implements SoundSource3D {
 		synchronized (channels) {
 			for (Source3DChannel ch : channels) {
 				int st = ch.playerImpl.getState();
-				if (st != Player.REALIZED && st != Player.PAUSED) {
+				if (st != Player.REALIZED) {
 					throw new MediaException("A connected player is in UNREALIZED, PREFETCHED or STARTED state");
 				}
 			}
@@ -108,7 +108,7 @@ public class SoundSource3DImpl implements SoundSource3D {
 	private void checkModuleStates() {
 		for (Source3DChannel ch : channels) {
 			int st = ch.playerImpl.getState();
-			if (st != Player.REALIZED && st != Player.PAUSED) {
+			if (st != Player.REALIZED) {
 				throw new IllegalStateException("A connected player is in UNREALIZED, PREFETCHED or STARTED state");
 			}
 		}
@@ -229,7 +229,8 @@ public class SoundSource3DImpl implements SoundSource3D {
 	}
 
 	class OrientationControlImpl implements OrientationControl {
-		private final SoundSource3DImpl owner;
+		// package-private: inherited by DirectivityControlImpl / MacroscopicControlImpl
+		final SoundSource3DImpl owner;
 
 		OrientationControlImpl(SoundSource3DImpl owner) {
 			this.owner = owner;

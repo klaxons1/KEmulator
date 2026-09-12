@@ -33,7 +33,7 @@ public class Source3DChannel {
 	static final int BUFFER_COUNT = 8;
 
 	private final SoundSource3DImpl owner;
-	private final javax.microedition.media.PlayerImpl playerImpl;
+	final javax.microedition.media.PlayerImpl playerImpl;
 
 	private boolean isMpeg;
 	private AL al;
