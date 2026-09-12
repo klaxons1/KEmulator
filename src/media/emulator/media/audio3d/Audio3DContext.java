@@ -18,6 +18,20 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class Audio3DContext {
 
 	private static Audio3DContext instance;
+	private static int errorsLogged;
+
+	/** Console diagnostics (milestones + first errors only). */
+	static void log(String msg) {
+		System.err.println("[audio3d] " + msg);
+	}
+
+	static void logError(String msg, Throwable t) {
+		if (errorsLogged < 10) {
+			errorsLogged++;
+			System.err.println("[audio3d] error: " + msg + " -> " + t);
+			t.printStackTrace(System.err);
+		}
+	}
 
 	public static synchronized Audio3DContext instance() {
 		if (instance == null) {
@@ -120,10 +134,13 @@ public final class Audio3DContext {
 		pump = new Thread(new Runnable() {
 			@Override
 			public void run() {
+				boolean current = false;
 				try {
-					al.alcMakeContextCurrent(context);
-				} catch (Throwable ignored) {
+					current = al.alcMakeContextCurrent(context);
+				} catch (Throwable t) {
+					logError("pump: alcMakeContextCurrent", t);
 				}
+				log("pump started (context current=" + current + ")");
 				while (running) {
 					boolean active = false;
 					try {
@@ -132,7 +149,8 @@ public final class Audio3DContext {
 							while ((task = tasks.poll()) != null) {
 								try {
 									task.run();
-								} catch (Throwable ignored) {
+								} catch (Throwable t) {
+									logError("pump task", t);
 								}
 								active = true;
 							}
@@ -140,7 +158,8 @@ public final class Audio3DContext {
 						for (Runnable tick : ticks) {
 							try {
 								tick.run();
-							} catch (Throwable ignored) {
+							} catch (Throwable t) {
+								logError("pump tick", t);
 							}
 							active = true;
 						}

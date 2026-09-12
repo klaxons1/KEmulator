@@ -62,6 +62,7 @@ public class Source3DChannel {
 	private long timelineEnd;     // framePos value at which all requested passes are done
 	private boolean feederComplete;
 	private volatile boolean playing;
+	private boolean gainLogged;
 
 	// one-pole lowpass (ObstructionControl HF attenuation)
 	private volatile double lpAlpha;
@@ -165,10 +166,20 @@ public class Source3DChannel {
 		int[] src = new int[1];
 		a.alGenSources(1, src);
 		source = src[0];
+		int err = a.alGetError();
+		if (err != AL.AL_NO_ERROR || source == 0) {
+			Audio3DContext.log("alGenSources failed: AL error " + err);
+			return;
+		}
 		bufFrames = Math.max(256, sampleRate / 50);
 		bufBytes = bufFrames * frameBytes;
 		buffers = new int[BUFFER_COUNT];
 		a.alGenBuffers(BUFFER_COUNT, buffers);
+		err = a.alGetError();
+		if (err != AL.AL_NO_ERROR || buffers[0] == 0) {
+			Audio3DContext.log("alGenBuffers failed: AL error " + err);
+			return;
+		}
 		inQueue = new boolean[BUFFER_COUNT];
 		bufMem = new Memory(bufBytes);
 		lpState = new double[channels];
@@ -178,12 +189,17 @@ public class Source3DChannel {
 		a.alSourcef(source, AL.AL_PITCH, 1.0f);
 		a.alSource3f(source, AL.AL_POSITION, 0.0f, 0.0f, 0.0f);
 		alReady = true;
+		Audio3DContext.log("channel ready: source=" + source + " rate=" + sampleRate
+			+ " ch=" + channels + " bits=" + bits + " bufFrames=" + bufFrames);
 	}
 
 	/**
 	 * Detaches from the player; runs the cleanup on the pump thread.
 	 */
 	public void detach() {
+		if (!detached) {
+			Audio3DContext.log("channel detached");
+		}
 		detached = true;
 		playing = false;
 		Audio3DContext.instance().submit(new Runnable() {
@@ -245,6 +261,7 @@ public class Source3DChannel {
 				public void run() {
 					synchronized (Source3DChannel.this) {
 						if (!alReady || detached) {
+							Audio3DContext.log("startFeeding aborted: alReady=" + alReady + " detached=" + detached);
 							return;
 						}
 						// discard stale buffers left over from a previous run
@@ -261,10 +278,12 @@ public class Source3DChannel {
 							applySeekLocked();
 						}
 						playing = true;
+						gainLogged = false;
 						resetLowpass();
 						if (!isMpeg && queued == 0) {
 							fillPcmBufferLocked(); // prime the first buffer immediately
 						}
+						Audio3DContext.log("playback armed (mpeg=" + isMpeg + ", queued=" + queued + ")");
 					}
 					Audio3DContext.instance().addTick(tickRunnable);
 				}
@@ -452,6 +471,7 @@ public class Source3DChannel {
 				playing = false;
 				al.alSourceStop(source);
 				Audio3DContext.instance().removeTick(tickRunnable);
+				Audio3DContext.log("playback finished (loopCount=" + playerImpl.loopCount + ")");
 				playerImpl.notifyCompleted();
 				return;
 			}
@@ -541,6 +561,12 @@ public class Source3DChannel {
 					}
 				}
 			}
+			if (playing && !gainLogged) {
+				gainLogged = true;
+				Audio3DContext.log("tick: gain=" + gain
+					+ " source=(" + owner.p.x + "," + owner.p.y + "," + owner.p.z + ")"
+					+ " listener=(" + SpectatorImpl.x + "," + SpectatorImpl.y + "," + SpectatorImpl.z + ")");
+			}
 			al.alSourcef(source, AL.AL_GAIN, (float) gain);
 			al.alSourcef(source, AL.AL_PITCH, (float) pitch);
 			al.alSource3f(source, AL.AL_POSITION,
@@ -615,9 +641,17 @@ public class Source3DChannel {
 		al.alBufferData(buffers[slot], format, bufMem, bufBytes, sampleRate);
 		int[] q = new int[]{buffers[slot]};
 		al.alSourceQueueBuffers(source, 1, q);
+		int err = al.alGetError();
+		if (err != AL.AL_NO_ERROR) {
+			Audio3DContext.logError("pcm queue (queued=" + queued + ")",
+				new IllegalStateException("AL error " + err));
+		}
 		inQueue[slot] = true;
 		queued++;
 		al.alSourcePlay(source);
+		if (queued == 1) {
+			Audio3DContext.log("first buffer queued, source playing");
+		}
 		framePos += bufFrames;
 		if (framePos >= timelineEnd) {
 			feederComplete = true;
@@ -837,10 +871,18 @@ public class Source3DChannel {
 			al.alBufferData(ch.buffers[slot], ch.format, ch.bufMem, ch.bufBytes, ch.sampleRate);
 			int[] q = new int[]{ch.buffers[slot]};
 			al.alSourceQueueBuffers(ch.source, 1, q);
+			int err = al.alGetError();
+			if (err != AL.AL_NO_ERROR) {
+				Audio3DContext.logError("mpeg queue (queued=" + ch.queued + ")",
+					new IllegalStateException("AL error " + err));
+			}
 			ch.inQueue[slot] = true;
 			ch.queued++;
 			framesDrained += nFrames;
 			al.alSourcePlay(ch.source);
+			if (ch.queued == 1) {
+				Audio3DContext.log("first mpeg buffer queued, source playing");
+			}
 			return true;
 		}
 	}
