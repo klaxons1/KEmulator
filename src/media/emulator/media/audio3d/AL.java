@@ -1,5 +1,7 @@
 package emulator.media.audio3d;
 
+import com.sun.jna.AltCallingConvention;
+import com.sun.jna.Function;
 import com.sun.jna.Library;
 import com.sun.jna.Pointer;
 
@@ -17,6 +19,13 @@ import com.sun.jna.Pointer;
  * official LWJGL OpenAL bindings are ever added to the classpath this facade
  * can be swapped out mechanically (same constants, same C function names).
  */
+/**
+ * OpenAL is a plain C library: its functions use the C calling
+ * convention (cdecl) on every platform. JNA's default on Windows is
+ * stdcall, which corrupts the stack (silent drift, then a native
+ * access violation a few calls in), so force C_CONVENTION here.
+ */
+@AltCallingConvention(Function.C_CONVENTION)
 public interface AL extends Library {
 
 	// ---------- errors ----------
