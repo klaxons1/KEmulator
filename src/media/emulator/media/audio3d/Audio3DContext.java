@@ -117,9 +117,34 @@ public final class Audio3DContext {
 				context = 0;
 				ready = false;
 				status = "OpenAL is not available (" + t + "). "
-						+ "The lwjgl-openal natives jar (lwjgl-openal-natives-<platform>.jar, bundles openal-soft) "
-						+ "must be in home/ and on the classpath, e.g. lwjgl-openal-natives-windows-x86.jar for 32-bit Windows.";
+						+ "The lwjgl-openal natives jar (bundles openal-soft) must be on the runtime classpath, "
+						+ "e.g. lwjgl-openal-3.3.6-natives-windows-x86.jar (32-bit) or lwjgl-openal-3.3.6-natives-windows.jar (64-bit).";
 				System.err.println("*** " + status);
+				// Self-diagnostics: JVM bitness + can the class loader actually see the natives jar?
+				try {
+					String dataModel = System.getProperty("sun.arch.data.model", "?");
+					ClassLoader cl = ALC10.class.getClassLoader();
+					java.net.URL x86 = cl.getResource("windows/x86/org/lwjgl/openal/OpenAL.dll");
+					java.net.URL x64 = cl.getResource("windows/x64/org/lwjgl/openal/OpenAL.dll");
+					System.err.println("*** [audio3d] diagnostics: os=" + System.getProperty("os.name", "?")
+							+ " jvm-bits=" + dataModel + " (x86 natives need 32-bit JVM)");
+					System.err.println("*** [audio3d] ALC10 loaded by: " + cl);
+					System.err.println("*** [audio3d] resource windows/x86/org/lwjgl/openal/OpenAL.dll -> " + x86);
+					System.err.println("*** [audio3d] resource windows/x64/org/lwjgl/openal/OpenAL.dll -> " + x64);
+					if (x86 == null && x64 == null) {
+						System.err.println("*** [audio3d] => the lwjgl-openal natives jar is NOT on the runtime classpath. "
+								+ "In IDEA: Project Structure -> Libraries -> 'lwjgl-native' must contain "
+								+ "home/lwjgl-openal-3.3.6-natives-windows-x86.jar (or File -> Reload All from Disk after pulling).");
+					}
+					if (cl instanceof java.net.URLClassLoader) {
+						for (java.net.URL u : ((java.net.URLClassLoader) cl).getURLs()) {
+							if (u.toString().toLowerCase().contains("lwjgl")) {
+								System.err.println("*** [audio3d] classpath lwjgl jar: " + u);
+							}
+						}
+					}
+				} catch (Throwable ignored) {
+				}
 			}
 		}
 	}
