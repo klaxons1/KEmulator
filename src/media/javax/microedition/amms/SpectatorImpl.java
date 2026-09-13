@@ -1,6 +1,6 @@
 package javax.microedition.amms;
 
-import emulator.media.audio3d.AL;
+import org.lwjgl.openal.AL10;
 import emulator.media.audio3d.Audio3DContext;
 import emulator.media.audio3d.Vec3;
 import javax.microedition.amms.control.audio3d.DopplerControl;
@@ -42,15 +42,11 @@ public class SpectatorImpl extends Spectator {
 		if (!ctx.isReady()) {
 			return;
 		}
-		AL al = ctx.al();
-		if (al == null) {
-			return;
-		}
 		double[] f = new double[3];
 		double[] u = new double[3];
 		Vec3.orientationFromAngles(heading, pitch, roll, f, u);
-		al.alListenerfv(AL.AL_POSITION, new float[]{x / 1000f, y / 1000f, z / 1000f});
-		al.alListenerfv(AL.AL_ORIENTATION,
+		AL10.alListenerfv(AL10.AL_POSITION, new float[]{x / 1000f, y / 1000f, z / 1000f});
+		AL10.alListenerfv(AL10.AL_ORIENTATION,
 				new float[]{(float) f[0], (float) f[1], (float) f[2], (float) u[0], (float) u[1], (float) u[2]});
 	}
 
