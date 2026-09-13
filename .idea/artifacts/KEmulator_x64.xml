@@ -21,6 +21,7 @@
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl3-swt-common.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl-glfw.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl-openal.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/vlcj-4.7.3.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/vlcj-natives-4.7.0.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/jna-5.7.0.jar" path-in-jar="/" />

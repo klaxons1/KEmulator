@@ -1,6 +1,6 @@
 package emulator.media.audio3d;
 
-import com.sun.jna.Memory;
+import org.lwjgl.openal.AL10;
 import emulator.javazoom.jl.decoder.Bitstream;
 import emulator.javazoom.jl.decoder.Header;
 
@@ -9,6 +9,9 @@ import javax.microedition.media.MediaException;
 import javax.sound.sampled.AudioFormat;
 
 import java.io.ByteArrayInputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Arrays;
 
 /**
  * One 3D audio channel: a single OpenAL source fed from one
@@ -37,7 +40,7 @@ public class Source3DChannel {
 	final javax.microedition.media.PlayerImpl playerImpl;
 
 	private boolean isMpeg;
-	private AL al;
+
 	private int source;
 	private int[] buffers;
 	private boolean[] inQueue;
@@ -48,7 +51,8 @@ public class Source3DChannel {
 	private int bits;
 	private int frameBytes;
 	private int format;
-	private Memory bufMem;
+	private ByteBuffer buf;
+	private byte[] scratch;
 	private int queued;
 	private volatile boolean alReady;
 	private volatile boolean detached;
@@ -100,8 +104,8 @@ public class Source3DChannel {
 			channels = f.getChannels();
 			bits = f.getSampleSizeInBits();
 			frameBytes = channels * bits / 8;
-			format = (channels == 1) ? (bits == 16 ? AL.AL_FORMAT_MONO16 : AL.AL_FORMAT_MONO8)
-					: (bits == 16 ? AL.AL_FORMAT_STEREO16 : AL.AL_FORMAT_STEREO8);
+			format = (channels == 1) ? (bits == 16 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_MONO8)
+	: (bits == 16 ? AL10.AL_FORMAT_STEREO16 : AL10.AL_FORMAT_STEREO8);
 			totalFrames = pcm.length / frameBytes;
 			if (totalFrames == 0) {
 				throw new MediaException("No decodable PCM samples found");
@@ -140,7 +144,7 @@ public class Source3DChannel {
 		channels = chCount;
 		bits = 16;
 		frameBytes = channels * 2;
-		format = channels == 1 ? AL.AL_FORMAT_MONO16 : AL.AL_FORMAT_STEREO16;
+		format = channels == 1 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_STEREO16;
 		totalFrames = Long.MAX_VALUE;
 		// AL calls must happen on the pump thread
 		Audio3DContext.instance().submit(new Runnable() {
@@ -158,36 +162,36 @@ public class Source3DChannel {
 		if (alReady || detached || sampleRate == 0) {
 			return;
 		}
-		AL a = Audio3DContext.instance().al();
-		if (a == null) {
+		if (!Audio3DContext.instance().isReady()) {
 			return;
 		}
-		al = a;
-		int[] src = new int[1];
-		a.alGenSources(1, src);
-		source = src[0];
-		int err = a.alGetError();
-		if (err != AL.AL_NO_ERROR || source == 0) {
+		int src = AL10.alGenSources();
+		source = src;
+		int err = AL10.alGetError();
+		if (err != AL10.AL_NO_ERROR || source == 0) {
 			Audio3DContext.log("alGenSources failed: AL error " + err);
 			return;
 		}
 		bufFrames = Math.max(256, sampleRate / 50);
 		bufBytes = bufFrames * frameBytes;
 		buffers = new int[BUFFER_COUNT];
-		a.alGenBuffers(BUFFER_COUNT, buffers);
-		err = a.alGetError();
-		if (err != AL.AL_NO_ERROR || buffers[0] == 0) {
+		for (int i = 0; i < BUFFER_COUNT; i++) {
+			buffers[i] = AL10.alGenBuffers();
+		}
+		err = AL10.alGetError();
+		if (err != AL10.AL_NO_ERROR || buffers[0] == 0) {
 			Audio3DContext.log("alGenBuffers failed: AL error " + err);
 			return;
 		}
 		inQueue = new boolean[BUFFER_COUNT];
-		bufMem = new Memory(bufBytes);
+		buf = ByteBuffer.allocateDirect(bufBytes).order(ByteOrder.nativeOrder());
+		scratch = new byte[bufBytes];
 		lpState = new double[channels];
-		a.alSourcef(source, AL.AL_REFERENCE_DISTANCE, 1000.0f);
-		a.alSourcef(source, AL.AL_ROLLOFF_FACTOR, 0.0f);
-		a.alSourcef(source, AL.AL_GAIN, 0.0f);
-		a.alSourcef(source, AL.AL_PITCH, 1.0f);
-		a.alSource3f(source, AL.AL_POSITION, 0.0f, 0.0f, 0.0f);
+		AL10.alSourcef(source, AL10.AL_REFERENCE_DISTANCE, 1000.0f);
+		AL10.alSourcef(source, AL10.AL_ROLLOFF_FACTOR, 0.0f);
+		AL10.alSourcef(source, AL10.AL_GAIN, 0.0f);
+		AL10.alSourcef(source, AL10.AL_PITCH, 1.0f);
+		AL10.alSource3f(source, AL10.AL_POSITION, 0.0f, 0.0f, 0.0f);
 		alReady = true;
 		Audio3DContext.log("channel ready: source=" + source + " rate=" + sampleRate
 			+ " ch=" + channels + " bits=" + bits + " bufFrames=" + bufFrames);
@@ -206,27 +210,24 @@ public class Source3DChannel {
 			@Override
 			public void run() {
 				synchronized (Source3DChannel.this) {
-					if (al != null && source != 0) {
-						al.alSourceStop(source);
-						int q = al.alGetSourcei(source, AL.AL_BUFFERS_QUEUED);
-						int[] b = new int[1];
-						for (int i = 0; i < q; i++) {
-							al.alSourceUnqueueBuffers(source, 1, b);
-						}
-						al.alDeleteSources(1, new int[]{source});
-						if (buffers != null) {
-							al.alDeleteBuffers(buffers.length, buffers);
-						}
-						source = 0;
-						alReady = false;
+					if (source != 0) {
+					AL10.alSourceStop(source);
+					int q = AL10.alGetSourcei(source, AL10.AL_BUFFERS_QUEUED);
+					for (int i = 0; i < q; i++) {
+						AL10.alSourceUnqueueBuffers(source);
 					}
-					if (mpeg != null) {
-						mpeg.close();
+					AL10.alDeleteSources(source);
+					if (buffers != null) {
+						AL10.alDeleteBuffers(buffers);
 					}
-					if (bufMem != null) {
-						bufMem.clear();
-						bufMem = null;
-					}
+					source = 0;
+					alReady = false;
+				}
+				if (mpeg != null) {
+					mpeg.close();
+				}
+				buf = null;
+				scratch = null;
 				}
 				Audio3DContext.instance().removeTick(tickRunnable);
 			}
@@ -265,15 +266,14 @@ public class Source3DChannel {
 							return;
 						}
 						// discard stale buffers left over from a previous run
-						int[] b = new int[1];
-						int q = al.alGetSourcei(source, AL.AL_BUFFERS_QUEUED);
-						for (int i = 0; i < q; i++) {
-							al.alSourceUnqueueBuffers(source, 1, b);
-							if (inQueue != null && inQueue[b[0]]) {
-								inQueue[b[0]] = false;
-							}
+						int q = AL10.alGetSourcei(source, AL10.AL_BUFFERS_QUEUED);
+					for (int i = 0; i < q; i++) {
+						int b = AL10.alSourceUnqueueBuffers(source);
+						if (inQueue != null && inQueue[b]) {
+							inQueue[b] = false;
 						}
-						queued = 0;
+					}
+					queued = 0;
 						if (pendingSeek >= 0) {
 							applySeekLocked();
 						}
@@ -307,9 +307,9 @@ public class Source3DChannel {
 			@Override
 			public void run() {
 				synchronized (Source3DChannel.this) {
-					if (al != null && alReady && source != 0) {
-						al.alSourceStop(source);
-					}
+					if (alReady && source != 0) {
+					AL10.alSourceStop(source);
+				}
 				}
 			}
 		});
@@ -439,8 +439,7 @@ public class Source3DChannel {
 			detach();
 			return;
 		}
-		AL a = Audio3DContext.instance().al();
-		if (a == null) {
+		if (!Audio3DContext.instance().isReady()) {
 			return;
 		}
 		synchronized (this) {
@@ -469,7 +468,7 @@ public class Source3DChannel {
 			}
 			if (playing && done) {
 				playing = false;
-				al.alSourceStop(source);
+				AL10.alSourceStop(source);
 				Audio3DContext.instance().removeTick(tickRunnable);
 				Audio3DContext.log("playback finished (loopCount=" + playerImpl.loopCount + ")");
 				playerImpl.notifyCompleted();
@@ -567,9 +566,9 @@ public class Source3DChannel {
 					+ " source=(" + owner.p.x + "," + owner.p.y + "," + owner.p.z + ")"
 					+ " listener=(" + SpectatorImpl.x + "," + SpectatorImpl.y + "," + SpectatorImpl.z + ")");
 			}
-			al.alSourcef(source, AL.AL_GAIN, (float) gain);
-			al.alSourcef(source, AL.AL_PITCH, (float) pitch);
-			al.alSource3f(source, AL.AL_POSITION,
+			AL10.alSourcef(source, AL10.AL_GAIN, (float) gain);
+			AL10.alSourcef(source, AL10.AL_PITCH, (float) pitch);
+			AL10.alSource3f(source, AL10.AL_POSITION,
 					(float) (owner.p.x / 1000.0), (float) (owner.p.y / 1000.0), (float) (owner.p.z / 1000.0));
 		}
 	}
@@ -580,12 +579,11 @@ public class Source3DChannel {
 		if (queued >= BUFFER_COUNT || feederComplete) {
 			return;
 		}
-		int[] b = new int[1];
-		int processed = al.alGetSourcei(source, AL.AL_BUFFERS_PROCESSED);
+		int processed = AL10.alGetSourcei(source, AL10.AL_BUFFERS_PROCESSED);
 		for (int i = 0; i < processed; i++) {
-			al.alSourceUnqueueBuffers(source, 1, b);
-			if (inQueue[b[0]] != false) {
-				inQueue[b[0]] = false;
+			int b = AL10.alSourceUnqueueBuffers(source);
+			if (inQueue[b] != false) {
+				inQueue[b] = false;
 				if (queued > 0) {
 					queued--;
 				}
@@ -600,7 +598,7 @@ public class Source3DChannel {
 			return;
 		}
 		long srcFrame = Math.floorMod(framePos, totalFrames);
-		bufMem.clear();
+		Arrays.fill(scratch, (byte) 0);
 		int fb = frameBytes;
 		for (long i = 0; i < take; i++) {
 			long f = Math.floorMod(srcFrame + i, totalFrames);
@@ -609,25 +607,29 @@ public class Source3DChannel {
 				for (int c = 0; c < channels; c++) {
 					int s = (pcm[off + c * 2] & 0xFF) | (pcm[off + c * 2 + 1] << 8);
 					s = filterSample(s, c);
-					bufMem.setShort((int) (i * fb + c * 2), (short) s);
+					int o = (int) (i * fb + c * 2);
+					scratch[o] = (byte) (s & 0xFF);
+					scratch[o + 1] = (byte) ((s >> 8) & 0xFF);
 				}
 			} else {
 				for (int c = 0; c < channels; c++) {
 					int s = pcm[off + c] & 0xFF;
 					s = filterSample8(s, c);
-					bufMem.setByte((int) (i * fb + c), (byte) s);
+					scratch[(int) (i * fb + c)] = (byte) s;
 				}
 			}
 		}
 		int pad = bufBytes - (int) (take * fb);
-		if (pad > 0) {
-			if (bits == 8) {
-				for (int i = 0; i < pad; i++) {
-					bufMem.setByte((int) (take * fb) + i, (byte) 128);
-				}
+		if (pad > 0 && bits == 8) {
+			// 8-bit silence is 128
+			for (int i = 0; i < pad; i++) {
+				scratch[(int) (take * fb) + i] = (byte) 128;
 			}
-			// 16-bit silence is zero (Memory was cleared)
 		}
+		// 16-bit silence stays zero (scratch was cleared)
+		buf.clear();
+		buf.put(scratch, 0, bufBytes);
+		buf.position(0); // remaining() == bufBytes -> alBufferData size
 		int slot = -1;
 		for (int i = 0; i < BUFFER_COUNT; i++) {
 			if (!inQueue[i]) {
@@ -638,17 +640,16 @@ public class Source3DChannel {
 		if (slot == -1) {
 			return;
 		}
-		al.alBufferData(buffers[slot], format, bufMem, bufBytes, sampleRate);
-		int[] q = new int[]{buffers[slot]};
-		al.alSourceQueueBuffers(source, 1, q);
-		int err = al.alGetError();
-		if (err != AL.AL_NO_ERROR) {
+		AL10.alBufferData(buffers[slot], format, buf, sampleRate);
+		AL10.alSourceQueueBuffers(source, buffers[slot]);
+		int err = AL10.alGetError();
+		if (err != AL10.AL_NO_ERROR) {
 			Audio3DContext.logError("pcm queue (queued=" + queued + ")",
 				new IllegalStateException("AL error " + err));
 		}
 		inQueue[slot] = true;
 		queued++;
-		al.alSourcePlay(source);
+		AL10.alSourcePlay(source);
 		if (queued == 1) {
 			Audio3DContext.log("first buffer queued, source playing");
 		}
@@ -661,12 +662,11 @@ public class Source3DChannel {
 	private void applySeekLocked() {
 		long tFrames = pendingSeek;
 		pendingSeek = -1;
-		int[] b = new int[1];
-		int q = al.alGetSourcei(source, AL.AL_BUFFERS_QUEUED);
+		int q = AL10.alGetSourcei(source, AL10.AL_BUFFERS_QUEUED);
 		for (int i = 0; i < q; i++) {
-			al.alSourceUnqueueBuffers(source, 1, b);
-			if (inQueue[b[0]] != false) {
-				inQueue[b[0]] = false;
+			int b = AL10.alSourceUnqueueBuffers(source);
+			if (inQueue[b] != false) {
+				inQueue[b] = false;
 			}
 		}
 		queued = 0;
@@ -815,13 +815,11 @@ public class Source3DChannel {
 		 * @return false when there is no data to drain right now
 		 */
 		boolean drainOneLocked() {
-			AL al = ch.al;
-			int[] b = new int[1];
-			int processed = al.alGetSourcei(ch.source, AL.AL_BUFFERS_PROCESSED);
+			int processed = AL10.alGetSourcei(ch.source, AL10.AL_BUFFERS_PROCESSED);
 			for (int i = 0; i < processed; i++) {
-				al.alSourceUnqueueBuffers(ch.source, 1, b);
-				if (ch.inQueue[b[0]] != false) {
-					ch.inQueue[b[0]] = false;
+				int b = AL10.alSourceUnqueueBuffers(ch.source);
+				if (ch.inQueue[b] != false) {
+					ch.inQueue[b] = false;
 					if (ch.queued > 0) {
 						ch.queued--;
 					}
@@ -858,28 +856,32 @@ public class Source3DChannel {
 			if (slot == -1) {
 				return true;
 			}
-			ch.bufMem.clear();
+			Arrays.fill(ch.scratch, (byte) 0);
 			int nFrames = take / ch.frameBytes;
 			int fb = ch.frameBytes;
 			for (int i = 0; i < nFrames; i++) {
 				for (int c = 0; c < ch.channels; c++) {
 					int s = (data[i * fb + c * 2] & 0xFF) | (data[i * fb + c * 2 + 1] << 8);
 					s = ch.filterSample(s, c);
-					ch.bufMem.setShort(i * fb + c * 2, (short) s);
+					int o = i * fb + c * 2;
+					ch.scratch[o] = (byte) (s & 0xFF);
+					ch.scratch[o + 1] = (byte) ((s >> 8) & 0xFF);
 				}
 			}
-			al.alBufferData(ch.buffers[slot], ch.format, ch.bufMem, ch.bufBytes, ch.sampleRate);
-			int[] q = new int[]{ch.buffers[slot]};
-			al.alSourceQueueBuffers(ch.source, 1, q);
-			int err = al.alGetError();
-			if (err != AL.AL_NO_ERROR) {
+			ch.buf.clear();
+			ch.buf.put(ch.scratch, 0, ch.bufBytes);
+			ch.buf.position(0);
+			AL10.alBufferData(ch.buffers[slot], ch.format, ch.buf, ch.sampleRate);
+			AL10.alSourceQueueBuffers(ch.source, ch.buffers[slot]);
+			int err = AL10.alGetError();
+			if (err != AL10.AL_NO_ERROR) {
 				Audio3DContext.logError("mpeg queue (queued=" + ch.queued + ")",
 					new IllegalStateException("AL error " + err));
 			}
 			ch.inQueue[slot] = true;
 			ch.queued++;
 			framesDrained += nFrames;
-			al.alSourcePlay(ch.source);
+			AL10.alSourcePlay(ch.source);
 			if (ch.queued == 1) {
 				Audio3DContext.log("first mpeg buffer queued, source playing");
 			}

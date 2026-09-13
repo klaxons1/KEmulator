@@ -1,13 +1,20 @@
 package emulator.media.audio3d;
 
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
+import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.ALC10;
 
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Owns the OpenAL device/context and a single pump thread.
+ * <p>
+ * OpenAL is provided by the LWJGL <code>lwjgl-openal</code> module (3.3.6),
+ * whose natives jar bundles an openal-soft build
+ * (<code>openal32.dll</code> on Windows) &mdash; no system OpenAL install is
+ * required.
  * <p>
  * OpenAL contexts are bound to the thread that made them current, so <b>all</b>
  * OpenAL calls in this implementation happen on the pump thread only. The rest
@@ -40,9 +47,8 @@ public final class Audio3DContext {
 		return instance;
 	}
 
-	private AL al;
-	private Pointer device;
-	private Pointer context;
+	private long device;
+	private long context;
 	private volatile boolean ready;
 	private volatile String status = "not initialized";
 
@@ -86,41 +92,33 @@ public final class Audio3DContext {
 	 */
 	public void ensureStarted() {
 		synchronized (initLock) {
-			if (ready || al != null) {
+			if (ready || context != 0) {
 				return;
 			}
 			try {
-				String os = System.getProperty("os.name", "").toLowerCase();
-				String lib;
-				if (os.contains("win")) {
-					lib = "openal32";
-				} else if (os.contains("mac")) {
-					lib = "/System/Library/Frameworks/OpenAL.framework/OpenAL";
-				} else {
-					lib = "openal";
+				// LWJGL extracts the bundled openal-soft native
+				// (openal32.dll on Windows) from the lwjgl-openal natives jar.
+				long dev = ALC10.alcOpenDevice((ByteBuffer) null);
+				if (dev == 0) {
+					throw new IllegalStateException("alcOpenDevice(default) failed, error " + ALC10.alcGetError(dev));
 				}
-				AL loaded = Native.load(lib, AL.class);
-				Pointer dev = loaded.alcOpenDevice(null);
-				if (dev == null) {
-					throw new IllegalStateException("alcOpenDevice(default) failed, error " + loaded.alcGetError(dev));
+				long ctx = ALC10.alcCreateContext(dev, (IntBuffer) null);
+				if (ctx == 0) {
+					ALC10.alcCloseDevice(dev);
+					throw new IllegalStateException("alcCreateContext failed, error " + ALC10.alcGetError(dev));
 				}
-				Pointer ctx = loaded.alcCreateContext(dev, null);
-				if (ctx == null) {
-					loaded.alcCloseDevice(dev);
-					throw new IllegalStateException("alcCreateContext failed, error " + loaded.alcGetError(dev));
-				}
-				al = loaded;
 				device = dev;
 				context = ctx;
 				ready = true;
 				status = "ok";
 				startPump();
 			} catch (Throwable t) {
-				al = null;
-				device = null;
-				context = null;
+				device = 0;
+				context = 0;
 				ready = false;
-				status = "OpenAL is not available (" + t + "). On Windows install OpenAL Soft and put openal32.dll next to KEmulator.jar or on the library path; on Linux install libopenal.";
+				status = "OpenAL is not available (" + t + "). "
+						+ "The lwjgl-openal natives jar (lwjgl-openal-natives-<platform>.jar, bundles openal-soft) "
+						+ "must be in home/ and on the classpath, e.g. lwjgl-openal-natives-windows-x86.jar for 32-bit Windows.";
 				System.err.println("*** " + status);
 			}
 		}
@@ -136,11 +134,19 @@ public final class Audio3DContext {
 			public void run() {
 				boolean current = false;
 				try {
-					current = al.alcMakeContextCurrent(context);
+					current = ALC10.alcMakeContextCurrent(context);
 				} catch (Throwable t) {
 					logError("pump: alcMakeContextCurrent", t);
 				}
 				log("pump started (context current=" + current + ")");
+				if (current) {
+					try {
+						log("OpenAL: vendor=" + AL10.alGetString(AL10.AL_VENDOR)
+								+ " renderer=" + AL10.alGetString(AL10.AL_RENDERER)
+								+ " version=" + AL10.alGetString(AL10.AL_VERSION));
+					} catch (Throwable ignored) {
+					}
+				}
 				while (running) {
 					boolean active = false;
 					try {
@@ -163,8 +169,8 @@ public final class Audio3DContext {
 							}
 							active = true;
 						}
-						if (context != null) {
-							al.alcProcessContext(context);
+						if (context != 0) {
+							ALC10.alcProcessContext(context);
 						}
 						Thread.sleep(active ? 2 : 15);
 					} catch (InterruptedException e) {
@@ -173,14 +179,14 @@ public final class Audio3DContext {
 					}
 				}
 				try {
-					al.alcMakeContextCurrent(null);
-					if (context != null) {
-						al.alcDestroyContext(context);
-						context = null;
+					ALC10.alcMakeContextCurrent(0);
+					if (context != 0) {
+						ALC10.alcDestroyContext(context);
+						context = 0;
 					}
-					if (device != null) {
-						al.alcCloseDevice(device);
-						device = null;
+					if (device != 0) {
+						ALC10.alcCloseDevice(device);
+						device = 0;
 					}
 				} catch (Throwable ignored) {
 				}
@@ -201,12 +207,5 @@ public final class Audio3DContext {
 		synchronized (taskLock) {
 			tasks.add(task);
 		}
-	}
-
-	/**
-	 * The JNA library handle, valid only when {@link #isReady()}.
-	 */
-	public AL al() {
-		return al;
 	}
 }

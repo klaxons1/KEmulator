@@ -34,6 +34,8 @@
       <element id="extracted-dir" path="$PROJECT_DIR$/home/lwjgl-opengl-natives-windows-x86.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl-glfw.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/home/lwjgl-glfw-natives-windows-x86.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/lwjgl-openal.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/home/lwjgl-openal-natives-windows-x86.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/vlcj-natives-4.7.0.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/vlcj-4.7.3.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$PROJECT_DIR$/lib/jna-platform-5.7.0.jar" path-in-jar="/" />
