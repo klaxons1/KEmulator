@@ -38,10 +38,10 @@ public class BTSPPConnectionNotifier implements StreamConnectionNotifier {
     public void close() throws IOException {
         if (closed) return;
         closed = true;
-        // Unregister from service registry
-        BluetoothStack stack = BluetoothStack.getInstanceIfExists();
-        if (stack != null) {
-            stack.unregisterService(this);
+        // Unregister through the selected backend rather than assuming LAN.
+        BluetoothBackend backend = BluetoothBackendProvider.getInstanceIfExists();
+        if (backend != null) {
+            backend.unregisterService(this);
         }
         serverSocket.close();
         System.out.println("[BT] BTSPP notifier closed: " + url);

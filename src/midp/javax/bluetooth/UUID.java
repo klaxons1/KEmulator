@@ -74,22 +74,23 @@ public class UUID {
                     normalized.charAt(18) != '-' || normalized.charAt(23) != '-') {
                 throw new IllegalArgumentException("Invalid UUID format: " + v);
             }
-            // Check if it is actually a short UUID in 128-bit form (base UUID)
+            // Check if it is actually a short UUID in 128-bit form (base UUID).
+            // Assign the final fields once after parsing: assignments in both the
+            // try and catch blocks are rejected by javac's definite-assignment check.
+            long parsedShortUuid = -1;
+            boolean parsedIsShort = false;
             String suffix = normalized.substring(8);
             if (suffix.equalsIgnoreCase(BASE_UUID_SUFFIX)) {
                 String shortPart = normalized.substring(0, 8);
                 try {
-                    long val = Long.parseLong(shortPart, 16);
-                    this.shortUuid = val;
-                    this.isShort = true;
-                } catch (NumberFormatException e) {
-                    this.shortUuid = -1;
-                    this.isShort = false;
+                    parsedShortUuid = Long.parseLong(shortPart, 16);
+                    parsedIsShort = true;
+                } catch (NumberFormatException ignored) {
+                    // Keep the default values for a non-short UUID.
                 }
-            } else {
-                this.shortUuid = -1;
-                this.isShort = false;
             }
+            this.shortUuid = parsedShortUuid;
+            this.isShort = parsedIsShort;
             this.uuidString = normalized;
         }
     }

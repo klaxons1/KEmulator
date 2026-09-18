@@ -37,9 +37,9 @@ public class BTL2CAPConnectionNotifier implements L2CAPConnectionNotifier {
     public void close() throws IOException {
         if (closed) return;
         closed = true;
-        BluetoothStack stack = BluetoothStack.getInstanceIfExists();
-        if (stack != null) {
-            stack.unregisterService(this);
+        BluetoothBackend backend = BluetoothBackendProvider.getInstanceIfExists();
+        if (backend != null) {
+            backend.unregisterService(this);
         }
         serverSocket.close();
         System.out.println("[BT] L2CAP notifier closed: " + url);

@@ -129,11 +129,12 @@ public class Connector {
 			if (!Settings.protectedPackages.contains("javax.bluetooth")) {
 				if (s.startsWith("btspp://") || s.startsWith("btl2cap://") || s.startsWith("btgoep://")) {
 					try {
-						emulator.bluetooth.BluetoothStack stack = emulator.bluetooth.BluetoothStack.getInstance();
+						emulator.bluetooth.BluetoothBackend backend =
+								emulator.bluetooth.BluetoothBackendProvider.getInstance();
 						if (s.contains("://localhost:")) {
-							return stack.openServerNotifier(s);
+							return backend.openServerNotifier(s);
 						} else {
-							return stack.openClientConnection(s);
+							return backend.openClientConnection(s);
 						}
 					} catch (javax.bluetooth.BluetoothStateException bse) {
 						throw new IOException("Bluetooth not available: " + bse.getMessage());

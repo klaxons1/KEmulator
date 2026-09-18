@@ -1,9 +1,10 @@
 package javax.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
+import emulator.bluetooth.BluetoothBackend;
+import emulator.bluetooth.BluetoothBackendProvider;
 
 /**
- * Full implementation of DiscoveryAgent using LAN emulation.
+ * JSR-82 discovery facade delegated to the selected Bluetooth backend.
  */
 public class DiscoveryAgent {
 
@@ -13,25 +14,25 @@ public class DiscoveryAgent {
     public static final int CACHED = 0;
     public static final int PREKNOWN = 1;
 
-    private final BluetoothStack stack;
+    private final BluetoothBackend backend;
 
     public DiscoveryAgent() {
         try {
-            this.stack = BluetoothStack.getInstance();
+            this.backend = BluetoothBackendProvider.getInstance();
         } catch (BluetoothStateException e) {
             throw new RuntimeException(e);
         }
     }
 
-    DiscoveryAgent(BluetoothStack stack) {
-        this.stack = stack;
+    DiscoveryAgent(BluetoothBackend backend) {
+        this.backend = backend;
     }
 
     public RemoteDevice[] retrieveDevices(final int option) {
         if (option != CACHED && option != PREKNOWN) {
             throw new IllegalArgumentException("Invalid option: " + option);
         }
-        return stack.retrieveDevices(option);
+        return backend.retrieveDevices(option);
     }
 
     public boolean startInquiry(final int accessCode, final DiscoveryListener listener) throws BluetoothStateException {
@@ -39,23 +40,23 @@ public class DiscoveryAgent {
         if (accessCode != GIAC && accessCode != LIAC && (accessCode < 0x9E8B00 || accessCode > 0x9E8B3F) && accessCode != NOT_DISCOVERABLE) {
             throw new IllegalArgumentException("Invalid access code: " + accessCode);
         }
-        return stack.startInquiry(accessCode, listener);
+        return backend.startInquiry(accessCode, listener);
     }
 
     public boolean cancelInquiry(final DiscoveryListener listener) {
         if (listener == null) throw new NullPointerException();
-        return stack.cancelInquiry(listener);
+        return backend.cancelInquiry(listener);
     }
 
-    public int searchServices(final int[] attrSet, final UUID[] uuidSet, final RemoteDevice btDev, final DiscoveryListener discListener) throws BluetoothStateException {
+    public int searchServices(final int[] attrSet, final UUID[] uuidSet, final RemoteDevice btDev,
+                              final DiscoveryListener discListener) throws BluetoothStateException {
         if (btDev == null || discListener == null) throw new NullPointerException();
         if (uuidSet == null) throw new NullPointerException("uuidSet is null");
-        // attrSet can be null per spec?
-        return stack.searchServices(attrSet, uuidSet, btDev, discListener);
+        return backend.searchServices(attrSet, uuidSet, btDev, discListener);
     }
 
     public boolean cancelServiceSearch(final int transID) {
-        return stack.cancelServiceSearch(transID);
+        return backend.cancelServiceSearch(transID);
     }
 
     public String selectService(final UUID uuid, final int security, final boolean master) throws BluetoothStateException {
@@ -65,6 +66,6 @@ public class DiscoveryAgent {
                 security != ServiceRecord.AUTHENTICATE_ENCRYPT) {
             throw new IllegalArgumentException("Invalid security: " + security);
         }
-        return stack.selectService(uuid, security, master);
+        return backend.selectService(uuid, security, master);
     }
 }

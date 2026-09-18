@@ -2,6 +2,7 @@ package emulator.bluetooth;
 
 import javax.bluetooth.ServiceRecordImpl;
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
@@ -10,21 +11,26 @@ import java.util.List;
  * Simple SDP (Service Discovery Protocol) server emulated over TCP.
  * 
  * Protocol (very simple, text based):
- * Client -> Server: "SEARCH <uuid1,uuid2,...>" or "SEARCH ALL" or "LIST"
+ * Client -> Server: a length-prefixed UTF-8 string, "SEARCH <uuid1,uuid2,...>",
+ *                   "SEARCH ALL", or "LIST"
  * Server -> Client:
- *   int count (DataOutputStream.writeInt)
+ *   int count
  *   For each service:
- *     UTF: uuidOrPsm
- *     UTF: serviceName
- *     UTF: protocol (btspp/btl2cap/btgoep)
- *     Int: tcpPort
- *     Int: handle
- *     UTF: connectionUrl (btspp://...)
- *     Int: serviceClass
- * 
+ *     int UTF-8-byte-length + uuidOrPsm bytes
+ *     int UTF-8-byte-length + serviceName bytes
+ *     int UTF-8-byte-length + protocol bytes (btspp/btl2cap/btgoep)
+ *     int tcpPort
+ *     int handle
+ *     int UTF-8-byte-length + connectionUrl bytes
+ *     int serviceClass
+ *
+ * Strings are encoded by {@link BluetoothWireCodec}, not Java modified UTF.
  * This is enough for our LAN emulation.
  */
 public class SDPServer implements Runnable {
+
+    private static final int MAX_SERVICE_RECORDS = 256;
+    private static final int MAX_SERVICE_ATTRIBUTES = 1024;
 
     private final ServiceRegistry registry;
     private final BluetoothStack stack;
@@ -39,8 +45,10 @@ public class SDPServer implements Runnable {
 
     public synchronized void start() throws IOException {
         if (running) return;
-        serverSocket = new ServerSocket(BluetoothConstants.SDP_SERVER_PORT);
-        // If port 0, system assigns free port
+        int configuredPort = BluetoothConfiguration.getSdpPort();
+        // Port zero deliberately asks the operating system to reserve an
+        // available port atomically; do not probe a free port separately.
+        serverSocket = new ServerSocket(configuredPort);
         running = true;
         thread = new Thread(this, "KEm-BT-SDP-Server");
         thread.setDaemon(true);
@@ -90,7 +98,7 @@ public class SDPServer implements Runnable {
             s.setSoTimeout(5000);
             String request;
             try {
-                request = in.readUTF();
+                request = BluetoothWireCodec.readString(in);
             } catch (EOFException e) {
                 return;
             }
@@ -104,22 +112,22 @@ public class SDPServer implements Runnable {
                 if (arg.equalsIgnoreCase("ALL") || arg.equalsIgnoreCase("LIST") || arg.isEmpty()) {
                     services = new java.util.ArrayList<>(registry.getAllServices());
                 } else {
-                    // Comma separated UUIDs
+                    // Comma-separated UUIDs. A JSR-82 UUID can be expressed
+                    // with or without dashes, so compare canonical values.
                     String[] uuids = arg.split(",");
-                    // For simplicity, if any UUID matches, include service
-                    // If multiple UUIDs, we need intersection? Spec says service must have all UUIDs.
-                    // We'll implement: service matches if its UUID is in list
+                    // For simplicity, a service matches if its identifier is
+                    // present in the requested UUID set.
                     java.util.Set<String> wanted = new java.util.HashSet<>();
                     for (String u : uuids) {
-                        wanted.add(u.trim().toUpperCase());
+                        wanted.add(BluetoothUtils.normalizeServiceIdentifier(u));
                     }
                     java.util.List<BluetoothService> matched = new java.util.ArrayList<>();
                     for (BluetoothService svc : registry.getAllServices()) {
-                        if (wanted.contains(svc.getUuidOrPsm().toUpperCase())) {
+                        String serviceId = BluetoothUtils.normalizeServiceIdentifier(svc.getUuidOrPsm());
+                        if (wanted.contains(serviceId)) {
                             matched.add(svc);
                         }
                     }
-                    // If no filter matched but client sent single UUID, also try to find by containing?
                     services = matched;
                 }
             } else if (request.equalsIgnoreCase("LIST")) {
@@ -128,22 +136,27 @@ public class SDPServer implements Runnable {
                 services = new java.util.ArrayList<>(registry.getAllServices());
             }
 
-            out.writeInt(services.size());
-            for (BluetoothService svc : services) {
-                out.writeUTF(svc.getUuidOrPsm());
-                out.writeUTF(svc.getServiceName() != null ? svc.getServiceName() : "");
-                out.writeUTF(svc.getProtocol());
+            int serviceCount = Math.min(services.size(), MAX_SERVICE_RECORDS);
+            System.out.println("[BT] SDP request from " + s.getInetAddress().getHostAddress() +
+                    ": " + request + " -> " + serviceCount + " service(s)");
+            out.writeInt(serviceCount);
+            for (int serviceIndex = 0; serviceIndex < serviceCount; serviceIndex++) {
+                BluetoothService svc = services.get(serviceIndex);
+                BluetoothWireCodec.writeString(out, svc.getUuidOrPsm());
+                BluetoothWireCodec.writeString(out, svc.getServiceName() != null ? svc.getServiceName() : "");
+                BluetoothWireCodec.writeString(out, svc.getProtocol());
                 out.writeInt(svc.getTcpPort());
                 out.writeInt(svc.getServiceRecord().getHandle());
-                out.writeUTF(svc.generateConnectionUrl(stack.getLocalAddress()));
+                BluetoothWireCodec.writeString(out, svc.generateConnectionUrl(stack.getLocalAddress()));
                 out.writeInt(svc.getServiceRecord().getDeviceServiceClasses());
-                // Attributes count
+                // Attributes are currently reconstructed by the client. Keep
+                // their count bounded so the wire contract stays defensive.
                 ServiceRecordImpl rec = svc.getServiceRecord();
-                out.writeInt(rec.getAttributeIDs().length);
-                for (int attrId : rec.getAttributeIDs()) {
-                    out.writeInt(attrId);
-                    // For simplicity, we don't serialize DataElement fully here
-                    // Client will reconstruct basic attributes
+                int[] attributeIds = rec.getAttributeIDs();
+                int attributeCount = Math.min(attributeIds.length, MAX_SERVICE_ATTRIBUTES);
+                out.writeInt(attributeCount);
+                for (int attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++) {
+                    out.writeInt(attributeIds[attributeIndex]);
                 }
             }
             out.flush();
@@ -158,7 +171,11 @@ public class SDPServer implements Runnable {
      * Returns list of ServiceRecordImpl (with host device set).
      */
     public static List<ServiceRecordImpl> queryRemote(String ip, int port, String[] uuidFilter, javax.bluetooth.RemoteDevice hostDevice) throws IOException {
-        try (Socket socket = new Socket(ip, port)) {
+        try (Socket socket = new Socket()) {
+            // A peer that disappeared from the LAN must not leave a JSR-82
+            // service search blocked behind the operating system's long TCP
+            // connect timeout.
+            socket.connect(new InetSocketAddress(ip, port), BluetoothConstants.SERVICE_SEARCH_TIMEOUT_MS);
             socket.setSoTimeout(BluetoothConstants.SERVICE_SEARCH_TIMEOUT_MS);
             DataInputStream in = new DataInputStream(socket.getInputStream());
             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
@@ -172,23 +189,27 @@ public class SDPServer implements Runnable {
                     req.append(uuidFilter[i]);
                 }
             }
-            out.writeUTF(req.toString());
+            BluetoothWireCodec.writeString(out, req.toString());
             out.flush();
 
-            int count = in.readInt();
+            int count = BluetoothWireCodec.readCount(in, MAX_SERVICE_RECORDS, "SDP service record");
             List<ServiceRecordImpl> result = new java.util.ArrayList<>(count);
             for (int i = 0; i < count; i++) {
-                String uuidOrPsm = in.readUTF();
-                String serviceName = in.readUTF();
-                String protocol = in.readUTF();
+                String uuidOrPsm = BluetoothWireCodec.readString(in);
+                String serviceName = BluetoothWireCodec.readString(in);
+                String protocol = BluetoothWireCodec.readString(in);
                 int tcpPort = in.readInt();
                 int handle = in.readInt();
-                String connUrl = in.readUTF();
+                String connUrl = BluetoothWireCodec.readString(in);
                 int deviceClass = in.readInt();
-                int attrCount = in.readInt();
-                // Skip attributes
+                int attrCount = BluetoothWireCodec.readCount(in, MAX_SERVICE_ATTRIBUTES, "SDP attribute");
+                // Attributes are reconstructed below; retain framing while
+                // safely consuming the advertised identifiers.
                 for (int j = 0; j < attrCount; j++) {
                     in.readInt();
+                }
+                if (uuidOrPsm == null || protocol == null) {
+                    throw new IOException("SDP service has no identifier or protocol");
                 }
 
                 ServiceRecordImpl rec = new ServiceRecordImpl(hostDevice);
@@ -199,8 +220,8 @@ public class SDPServer implements Runnable {
                 rec.setServiceName(serviceName);
                 rec.setUuid(uuidOrPsm);
                 rec.setDeviceServiceClasses(deviceClass);
-                // Set some default attributes
-                rec.setAttributeValue(0x0000, new javax.bluetooth.DataElement(javax.bluetooth.DataElement.U_INT_4, (long) handle));
+                // setHandle() restores the immutable ServiceRecordHandle
+                // attribute (0x0000); populate the remaining defaults here.
                 rec.setAttributeValue(0x0001, createUuidSequence(uuidOrPsm));
                 if (serviceName != null && !serviceName.isEmpty()) {
                     // ServiceName is attribute 0x0100 + base

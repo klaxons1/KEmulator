@@ -1,6 +1,7 @@
 package javax.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
+import emulator.bluetooth.BluetoothBackend;
+import emulator.bluetooth.BluetoothBackendProvider;
 import emulator.bluetooth.BluetoothUtils;
 import emulator.bluetooth.BTL2CAPConnection;
 import javax.microedition.io.Connection;
@@ -53,17 +54,18 @@ public class L2CAPConnectionImpl implements L2CAPConnection {
     }
 
     public static Connection open(final String url) throws IOException {
-        // Delegate to BluetoothStack
+        // Delegate to the selected Bluetooth backend.
         try {
-            BluetoothStack stack = BluetoothStack.getInstance();
-            Connection conn = stack.openClientConnection(url);
+            BluetoothBackend backend = BluetoothBackendProvider.getInstance();
+            Connection conn = backend.openClientConnection(url);
             if (conn instanceof L2CAPConnection) {
                 return conn;
             }
             if (conn instanceof BTL2CAPConnection) {
                 return new L2CAPConnectionImpl((BTL2CAPConnection) conn);
             }
-            // If stack returns generic, try to parse as direct TCP for backward compatibility
+            // If a backend returns a generic connection, retain direct-TCP
+            // parsing as a compatibility fallback.
             BluetoothUtils.ParsedUrl parsed = BluetoothUtils.parseBtUrl(url);
             String host = parsed.hostname;
             int port;
@@ -81,7 +83,7 @@ public class L2CAPConnectionImpl implements L2CAPConnection {
             if (t != null) try { transMTU = Integer.parseInt(t); } catch (NumberFormatException ignored) {}
             return new L2CAPConnectionImpl(socket, recvMTU, transMTU, url);
         } catch (BluetoothStateException e) {
-            throw new IOException("Bluetooth stack not available: " + e.getMessage());
+            throw new IOException("Bluetooth backend not available: " + e.getMessage());
         }
     }
 }

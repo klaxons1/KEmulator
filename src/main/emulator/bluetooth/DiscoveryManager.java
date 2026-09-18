@@ -4,6 +4,7 @@ import javax.bluetooth.DiscoveryAgent;
 import javax.bluetooth.DiscoveryListener;
 import java.io.IOException;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,68 +12,96 @@ import java.util.concurrent.ConcurrentHashMap;
  * Handles Bluetooth device discovery over LAN using UDP broadcast/multicast.
  * 
  * Each emulator instance:
- * - Listens on UDP port 63520 for discovery requests/responses
- * - On startInquiry(), broadcasts DISCOVER_REQ and collects DISCOVER_RESP
+ * - Listens on its configured UDP discovery port for requests and multicast traffic
+ * - On startInquiry(), broadcasts DISCOVER_REQ from a unique reply port and
+ *   collects the unicast DISCOVER_RESP packets sent to that port
  * - On receiving DISCOVER_REQ, responds with DISCOVER_RESP if discoverable
  */
 public class DiscoveryManager implements Runnable {
 
+    private static final int DISCOVERY_REQUEST_INTERVAL_MS = 2000;
+    private static final int INQUIRY_RECEIVE_TIMEOUT_MS = 250;
+    private static final int DISCOVERY_MULTICAST_TTL = 1;
+
     private final BluetoothStack stack;
-    private DatagramSocket socket;
-    private MulticastSocket multicastSocket;
+    private final int discoveryPort;
+
+    /*
+     * A MulticastSocket is also a DatagramSocket, so one socket can receive
+     * both UDP broadcasts and packets addressed to the discovery group.
+     */
+    private volatile MulticastSocket socket;
+    private volatile boolean multicastJoined;
     private Thread thread;
     private volatile boolean running = false;
 
-    // Cached peers: btAddress -> peer
+    // Cached peers: btAddress -> peer. Manually configured peers are kept in
+    // the same routing table but separately tracked for PREKNOWN semantics.
     private final Map<String, BluetoothPeer> cachedPeers = new ConcurrentHashMap<>();
+    private final Set<String> preknownPeerAddresses =
+            Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     // Inquiry state
     private volatile boolean inquiryRunning = false;
     private volatile DiscoveryListener inquiryListener;
+    private final Set<String> inquiryNotifiedPeers =
+            Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private Thread inquiryThread;
 
     public DiscoveryManager(BluetoothStack stack) {
         this.stack = stack;
+        this.discoveryPort = BluetoothConfiguration.getDiscoveryPort();
     }
 
     public synchronized void start() throws IOException {
         if (running) return;
 
-        // Try to create socket with reuse
-        socket = new DatagramSocket(null);
+        // Set SO_REUSEADDR before binding so separate KEmulator processes can
+        // listen on the same discovery port. MulticastSocket also receives
+        // broadcast datagrams, so a second DatagramSocket is not needed.
+        socket = new MulticastSocket(null);
         socket.setReuseAddress(true);
         socket.setBroadcast(true);
-        socket.bind(new InetSocketAddress(BluetoothConstants.DISCOVERY_PORT));
+        try {
+            // Discovery is intentionally link-local.  Keep multicast packets
+            // on the LAN and allow local emulator processes to receive them.
+            socket.setTimeToLive(DISCOVERY_MULTICAST_TTL);
+            socket.setLoopbackMode(false);
+        } catch (IOException e) {
+            // Directed and limited broadcasts remain available as a fallback.
+            System.out.println("[BT] Could not configure multicast options: " + e.getMessage());
+        }
+        socket.bind(new InetSocketAddress(discoveryPort));
+        loadManualPeers();
 
         try {
-            multicastSocket = new MulticastSocket(BluetoothConstants.DISCOVERY_PORT);
-            multicastSocket.setReuseAddress(true);
-            multicastSocket.joinGroup(InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP));
+            socket.joinGroup(InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP));
+            multicastJoined = true;
         } catch (IOException e) {
+            multicastJoined = false;
             System.out.println("[BT] Multicast not available, using broadcast only: " + e.getMessage());
-            multicastSocket = null;
         }
 
         running = true;
         thread = new Thread(this, "KEm-BT-Discovery");
         thread.setDaemon(true);
         thread.start();
-        System.out.println("[BT] Discovery started on port " + BluetoothConstants.DISCOVERY_PORT);
+        System.out.println("[BT] Discovery started on port " + discoveryPort);
     }
 
     public synchronized void stop() {
         running = false;
-        if (socket != null) {
-            socket.close();
-            socket = null;
+        MulticastSocket discoverySocket = socket;
+        socket = null;
+        if (discoverySocket != null) {
+            if (multicastJoined) {
+                try {
+                    discoverySocket.leaveGroup(InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP));
+                } catch (IOException ignored) {}
+            }
+            discoverySocket.close();
         }
-        if (multicastSocket != null) {
-            try {
-                multicastSocket.leaveGroup(InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP));
-            } catch (IOException ignored) {}
-            multicastSocket.close();
-            multicastSocket = null;
-        }
+        multicastJoined = false;
         if (thread != null) {
             thread.interrupt();
             thread = null;
@@ -85,11 +114,11 @@ public class DiscoveryManager implements Runnable {
         byte[] buf = new byte[1024];
         while (running) {
             try {
+                MulticastSocket discoverySocket = socket;
+                if (discoverySocket == null) return;
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
-                if (socket != null) {
-                    socket.receive(packet);
-                    handlePacket(packet);
-                }
+                discoverySocket.receive(packet);
+                handlePacket(packet);
             } catch (IOException e) {
                 if (running) {
                     // e.printStackTrace();
@@ -101,7 +130,7 @@ public class DiscoveryManager implements Runnable {
     }
 
     private void handlePacket(DatagramPacket packet) {
-        String msg = new String(packet.getData(), 0, packet.getLength()).trim();
+        String msg = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8).trim();
         // Expected format: KEM_BT|TYPE|...
         if (!msg.startsWith(BluetoothConstants.MAGIC)) return;
         String[] parts = msg.split("\\|");
@@ -130,12 +159,13 @@ public class DiscoveryManager implements Runnable {
                     String.valueOf(stack.getDiscoverable())
             );
             sendResponse(resp, packet.getAddress(), packet.getPort());
-            // Also add requester to cache (if we have its info)
+            // Cache the packet source, not the self-reported address.  The
+            // source is the endpoint that is demonstrably reachable from this
+            // host, which matters on PCs with more than one network adapter.
             try {
                 String reqFriendly = parts[3];
-                String reqIp = parts[4];
                 int reqSdp = Integer.parseInt(parts[5]);
-                addOrUpdatePeer(remoteBtAddr, reqFriendly, reqIp, reqSdp, 0);
+                addOrUpdatePeer(remoteBtAddr, reqFriendly, senderIp, reqSdp, 0);
             } catch (Exception ignored) {}
 
         } else if (type.equals(BluetoothConstants.TYPE_DISCOVER_RESP)) {
@@ -144,7 +174,9 @@ public class DiscoveryManager implements Runnable {
             String btAddr = parts[2];
             if (btAddr.equalsIgnoreCase(stack.getLocalAddress())) return; // ignore self
             String friendlyName = parts.length > 3 ? parts[3] : btAddr;
-            String ip = parts.length > 4 ? parts[4] : senderIp;
+            // The UDP source is the route the response actually used.  Do not
+            // trust an advertised interface selected by a multi-homed peer.
+            String ip = senderIp;
             int sdpPort = 0;
             int devClass = 0;
             try {
@@ -154,11 +186,11 @@ public class DiscoveryManager implements Runnable {
 
             BluetoothPeer peer = addOrUpdatePeer(btAddr, friendlyName, ip, sdpPort, devClass);
 
-            // If inquiry is running, notify listener
-            if (inquiryRunning && inquiryListener != null) {
+            // A peer can answer via broadcast, multicast, and loopback. JSR-82
+            // reports a discovered device once per inquiry, so suppress repeats.
+            if (inquiryRunning && inquiryListener != null &&
+                    inquiryNotifiedPeers.add(btAddr.toUpperCase())) {
                 try {
-                    // Avoid duplicate notifications - we check if already notified?
-                    // For simplicity, notify each time we get response
                     javax.bluetooth.DeviceClass dc = new javax.bluetooth.DeviceClass(devClass);
                     inquiryListener.deviceDiscovered(peer.getRemoteDevice(), dc);
                 } catch (Exception e) {
@@ -167,9 +199,71 @@ public class DiscoveryManager implements Runnable {
             }
         } else if (type.equals(BluetoothConstants.TYPE_BYE)) {
             if (parts.length < 3) return;
-            String btAddr = parts[2];
-            cachedPeers.remove(btAddr.toUpperCase());
+            String btAddr = parts[2].toUpperCase();
+            // A manually configured endpoint stays addressable even if it
+            // broadcasts BYE or is currently offline.
+            if (!preknownPeerAddresses.contains(btAddr)) {
+                cachedPeers.remove(btAddr);
+            }
         }
+    }
+
+    /**
+     * Loads manually addressable LAN peers. This is useful on networks that
+     * block broadcast/multicast or when a remote emulator uses another
+     * discovery port. The syntax is a comma- or semicolon-separated list of
+     * {@code BT_ADDRESS@host:sdpPort}, for example
+     * {@code 001122AABBCC@192.168.1.42:63521}.
+     */
+    private void loadManualPeers() {
+        String configured = BluetoothConfiguration.getManualPeers();
+        if (configured == null) return;
+
+        String[] entries = configured.split("[,;]");
+        for (String rawEntry : entries) {
+            String entry = rawEntry.trim();
+            if (entry.isEmpty()) continue;
+
+            int at = entry.indexOf('@');
+            int colon = entry.lastIndexOf(':');
+            if (at <= 0 || colon <= at + 1 || colon == entry.length() - 1) {
+                logInvalidManualPeer(entry);
+                continue;
+            }
+
+            String address = BluetoothUtils.normalizeAddress(entry.substring(0, at).trim());
+            String host = entry.substring(at + 1, colon).trim();
+            String portText = entry.substring(colon + 1).trim();
+            if (!BluetoothUtils.isValidBtAddress(address) || host.isEmpty()) {
+                logInvalidManualPeer(entry);
+                continue;
+            }
+            if (address.equalsIgnoreCase(stack.getLocalAddress())) {
+                System.out.println("[BT] Ignoring local address in " + BluetoothConstants.PROP_MANUAL_PEERS);
+                continue;
+            }
+
+            int sdpPort;
+            try {
+                sdpPort = Integer.parseInt(portText);
+            } catch (NumberFormatException e) {
+                logInvalidManualPeer(entry);
+                continue;
+            }
+            if (sdpPort < 1 || sdpPort > 65535) {
+                logInvalidManualPeer(entry);
+                continue;
+            }
+
+            addOrUpdatePeer(address, address, host, sdpPort, 0);
+            preknownPeerAddresses.add(address);
+            System.out.println("[BT] Configured preknown peer " + address + " at " + host + ":" + sdpPort);
+        }
+    }
+
+    private void logInvalidManualPeer(String entry) {
+        System.out.println("[BT] Ignoring invalid " + BluetoothConstants.PROP_MANUAL_PEERS +
+                " entry '" + entry + "' (expected BT_ADDRESS@host:sdpPort)");
     }
 
     private BluetoothPeer addOrUpdatePeer(String btAddr, String friendlyName, String ip, int sdpPort, int devClass) {
@@ -191,16 +285,35 @@ public class DiscoveryManager implements Runnable {
     }
 
     private void sendResponse(String msg, InetAddress address, int port) {
+        DatagramSocket responseSocket = socket;
+        if (responseSocket == null || responseSocket.isClosed()) return;
         try {
-            byte[] data = msg.getBytes();
+            byte[] data = msg.getBytes(StandardCharsets.UTF_8);
             DatagramPacket packet = new DatagramPacket(data, data.length, address, port);
-            socket.send(packet);
+            responseSocket.send(packet);
         } catch (IOException e) {
             // e.printStackTrace();
         }
     }
 
+    /**
+     * Sends a discovery request from the permanent listener socket.
+     * Kept public for callers that want to announce themselves outside an
+     * active inquiry; normal inquiries use a private, ephemeral reply port.
+     */
     public void broadcastDiscoveryRequest() {
+        DatagramSocket discoverySocket = socket;
+        if (discoverySocket != null && !discoverySocket.isClosed()) {
+            sendDiscoveryRequest(discoverySocket);
+        }
+    }
+
+    /**
+     * Sends discovery traffic from {@code sender}. An inquiry supplies an
+     * ephemeral sender socket, which makes each unicast DISCOVER_RESP return
+     * to the correct emulator even when several instances share port 63520.
+     */
+    private void sendDiscoveryRequest(DatagramSocket sender) {
         String msg = String.join("|",
                 BluetoothConstants.MAGIC,
                 BluetoothConstants.TYPE_DISCOVER_REQ,
@@ -209,29 +322,38 @@ public class DiscoveryManager implements Runnable {
                 BluetoothUtils.getLocalIpString(),
                 String.valueOf(stack.getSdpServer().getPort())
         );
-        byte[] data = msg.getBytes();
-        // Broadcast to 255.255.255.255
-        try {
-            DatagramPacket broadcastPacket = new DatagramPacket(data, data.length,
-                    InetAddress.getByName("255.255.255.255"), BluetoothConstants.DISCOVERY_PORT);
-            socket.send(broadcastPacket);
-        } catch (IOException ignored) {}
+        byte[] data = msg.getBytes(StandardCharsets.UTF_8);
 
-        // Multicast
-        if (multicastSocket != null) {
+        // Send a directed broadcast on every active IPv4 LAN.  Some routers
+        // and Wi-Fi drivers discard 255.255.255.255 while accepting the
+        // subnet-specific broadcast address.
+        Set<InetAddress> broadcasts = new LinkedHashSet<>(BluetoothUtils.getBroadcastAddresses());
+        try {
+            broadcasts.add(InetAddress.getByName("255.255.255.255"));
+        } catch (UnknownHostException ignored) {}
+        for (InetAddress broadcast : broadcasts) {
             try {
-                DatagramPacket multicastPacket = new DatagramPacket(data, data.length,
-                        InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP),
-                        BluetoothConstants.DISCOVERY_PORT);
-                multicastSocket.send(multicastPacket);
+                DatagramPacket broadcastPacket = new DatagramPacket(data, data.length,
+                        broadcast, discoveryPort);
+                sender.send(broadcastPacket);
             } catch (IOException ignored) {}
         }
 
-        // Also send to localhost for same-machine instances
+        // Send multicast even when this instance could not subscribe to the
+        // group: it can still receive unicast replies, and LAN peers may have
+        // multicast enabled.
+        try {
+            DatagramPacket multicastPacket = new DatagramPacket(data, data.length,
+                    InetAddress.getByName(BluetoothConstants.DISCOVERY_MULTICAST_GROUP),
+                    discoveryPort);
+            sender.send(multicastPacket);
+        } catch (IOException ignored) {}
+
+        // Explicit loopback supports multiple emulator processes on one PC.
         try {
             DatagramPacket localhostPacket = new DatagramPacket(data, data.length,
-                    InetAddress.getByName("127.0.0.1"), BluetoothConstants.DISCOVERY_PORT);
-            socket.send(localhostPacket);
+                    InetAddress.getByName("127.0.0.1"), discoveryPort);
+            sender.send(localhostPacket);
         } catch (IOException ignored) {}
     }
 
@@ -239,45 +361,78 @@ public class DiscoveryManager implements Runnable {
         if (inquiryRunning) return false;
         if (listener == null) return false;
 
+        inquiryNotifiedPeers.clear();
         inquiryRunning = true;
         inquiryListener = listener;
 
-        inquiryThread = new Thread(() -> {
-            try {
-                System.out.println("[BT] Starting inquiry...");
-                // Clear old cache? Keep but will refresh
-                broadcastDiscoveryRequest();
-
-                // Repeat broadcast every 2 seconds during inquiry
-                long start = System.currentTimeMillis();
-                while (inquiryRunning && (System.currentTimeMillis() - start) < BluetoothConstants.DEFAULT_INQUIRY_DURATION_MS) {
-                    try {
-                        Thread.sleep(2000);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    if (inquiryRunning) {
-                        broadcastDiscoveryRequest();
-                    }
-                }
-
-                if (inquiryRunning) {
-                    // Inquiry completed normally
-                    inquiryRunning = false;
-                    try {
-                        listener.inquiryCompleted(DiscoveryListener.INQUIRY_COMPLETED);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                    System.out.println("[BT] Inquiry completed, found " + cachedPeers.size() + " peers");
-                }
-            } finally {
-                inquiryRunning = false;
-            }
-        }, "KEm-BT-Inquiry");
+        inquiryThread = new Thread(() -> runInquiry(listener), "KEm-BT-Inquiry");
         inquiryThread.setDaemon(true);
         inquiryThread.start();
         return true;
+    }
+
+    /**
+     * Runs an inquiry with a unique UDP source port for responses. A response
+     * sent to the shared discovery port can be delivered to a different local
+     * KEmulator process when SO_REUSEADDR is in use.
+     */
+    private void runInquiry(DiscoveryListener listener) {
+        // Use MulticastSocket for the ephemeral response endpoint too.  Its
+        // enabled multicast loopback lets all local KEmulator processes see a
+        // request while the unique source port keeps their replies separate.
+        try (MulticastSocket replySocket = new MulticastSocket(null)) {
+            replySocket.setReuseAddress(true);
+            replySocket.setBroadcast(true);
+            try {
+                replySocket.setTimeToLive(DISCOVERY_MULTICAST_TTL);
+                replySocket.setLoopbackMode(false);
+            } catch (IOException ignored) {}
+            replySocket.bind(new InetSocketAddress(0));
+            replySocket.setSoTimeout(INQUIRY_RECEIVE_TIMEOUT_MS);
+
+            System.out.println("[BT] Starting inquiry...");
+            long start = System.currentTimeMillis();
+            long nextRequestAt = start;
+            while (inquiryRunning &&
+                    (System.currentTimeMillis() - start) < BluetoothConstants.DEFAULT_INQUIRY_DURATION_MS) {
+                long now = System.currentTimeMillis();
+                if (now >= nextRequestAt) {
+                    sendDiscoveryRequest(replySocket);
+                    nextRequestAt = now + DISCOVERY_REQUEST_INTERVAL_MS;
+                }
+
+                try {
+                    byte[] buffer = new byte[1024];
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    replySocket.receive(packet);
+                    handlePacket(packet);
+                } catch (SocketTimeoutException ignored) {
+                    // Check the inquiry deadline and cancellation state again.
+                }
+            }
+
+            if (inquiryRunning) {
+                inquiryRunning = false;
+                try {
+                    listener.inquiryCompleted(DiscoveryListener.INQUIRY_COMPLETED);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                System.out.println("[BT] Inquiry completed, found " + cachedPeers.size() + " peers");
+            }
+        } catch (IOException e) {
+            if (inquiryRunning) {
+                inquiryRunning = false;
+                try {
+                    listener.inquiryCompleted(DiscoveryListener.INQUIRY_ERROR);
+                } catch (Exception callbackError) {
+                    callbackError.printStackTrace();
+                }
+                System.out.println("[BT] Inquiry failed: " + e.getMessage());
+            }
+        } finally {
+            inquiryRunning = false;
+        }
     }
 
     public synchronized boolean cancelInquiry(DiscoveryListener listener) {
@@ -319,9 +474,14 @@ public class DiscoveryManager implements Runnable {
             }
             return result.length > 0 ? result : null;
         } else if (option == DiscoveryAgent.PREKNOWN) {
-            // For preknown, we could load from file, but return null for now
-            // Could also return cached as preknown for simplicity
-            return null;
+            List<javax.bluetooth.RemoteDevice> result = new ArrayList<>();
+            for (String address : preknownPeerAddresses) {
+                BluetoothPeer peer = cachedPeers.get(address);
+                if (peer != null) {
+                    result.add(peer.getRemoteDevice());
+                }
+            }
+            return result.isEmpty() ? null : result.toArray(new javax.bluetooth.RemoteDevice[result.size()]);
         }
         return null;
     }

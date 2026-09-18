@@ -1,6 +1,5 @@
 package com.vodafone.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
 import javax.bluetooth.*;
 import java.io.IOException;
 
@@ -16,7 +15,7 @@ public class Device {
 
     public Device(String btAddress) throws NullPointerException, IllegalArgumentException {
         if (btAddress == null) throw new NullPointerException();
-        this.remoteDevice = new RemoteDevice(btAddress);
+        this.remoteDevice = RemoteDevice.getOrCreate(btAddress);
     }
 
     Device(RemoteDevice remoteDevice) {

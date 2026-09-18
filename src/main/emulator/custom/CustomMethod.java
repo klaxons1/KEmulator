@@ -300,14 +300,9 @@ public class CustomMethod {
 			Emulator.getEventQueue().stop();
 			Emulator3D.exit();
 		} catch (Throwable ignored) {}
-		// Shutdown Bluetooth emulation
+		// Shutdown whichever Bluetooth backend was selected for this process.
 		try {
-			emulator.bluetooth.BluetoothStack stack = emulator.bluetooth.BluetoothStack.getInstanceIfExists();
-			if (stack != null) {
-				stack.getDiscoveryManager().stop();
-				stack.getSdpServer().stop();
-				stack.getServiceRegistry().clear();
-			}
+			emulator.bluetooth.BluetoothBackendProvider.shutdown();
 		} catch (Throwable ignored) {}
 		if (trackWriter != null) {
 			try {
