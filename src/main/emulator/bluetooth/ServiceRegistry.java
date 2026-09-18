@@ -26,7 +26,7 @@ public class ServiceRegistry {
         if (service.getNotifier() != null) {
             notifierToService.put(service.getNotifier(), service);
         }
-        String uuid = service.getUuidOrPsm().toUpperCase();
+        String uuid = BluetoothUtils.normalizeServiceIdentifier(service.getUuidOrPsm());
         uuidToServices.computeIfAbsent(uuid, k -> new ArrayList<>()).add(service);
         return service;
     }
@@ -38,10 +38,11 @@ public class ServiceRegistry {
         BluetoothService svc = notifierToService.remove(notifier);
         if (svc != null) {
             handleToService.remove(svc.getServiceRecord().getHandle());
-            List<BluetoothService> list = uuidToServices.get(svc.getUuidOrPsm().toUpperCase());
+            String uuid = BluetoothUtils.normalizeServiceIdentifier(svc.getUuidOrPsm());
+            List<BluetoothService> list = uuidToServices.get(uuid);
             if (list != null) {
                 list.remove(svc);
-                if (list.isEmpty()) uuidToServices.remove(svc.getUuidOrPsm().toUpperCase());
+                if (list.isEmpty()) uuidToServices.remove(uuid);
             }
             svc.close();
         }
@@ -70,14 +71,15 @@ public class ServiceRegistry {
     }
 
     /**
-     * Find services by UUID (or PSM) - case insensitive.
+     * Find services by UUID (or PSM), accepting equivalent UUID spellings
+     * such as dashed and undashed 128-bit forms.
      * If uuid is null, return all.
      */
     public List<BluetoothService> findByUuid(String uuid) {
         if (uuid == null) {
             return new ArrayList<>(handleToService.values());
         }
-        List<BluetoothService> list = uuidToServices.get(uuid.toUpperCase());
+        List<BluetoothService> list = uuidToServices.get(BluetoothUtils.normalizeServiceIdentifier(uuid));
         return list != null ? new ArrayList<>(list) : Collections.emptyList();
     }
 

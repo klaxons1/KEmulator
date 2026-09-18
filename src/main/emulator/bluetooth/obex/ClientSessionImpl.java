@@ -3,18 +3,13 @@ package emulator.bluetooth.obex;
 import javax.obex.*;
 import java.io.*;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Emulated OBEX ClientSession over TCP (which itself emulates BT RFCOMM).
- * 
- * Simple protocol:
- * - All messages are: int length + byte type + headers + optional data
- * Types: 0=CONNECT, 1=DISCONNECT, 2=PUT, 3=GET, 4=SETPATH, 5=DELETE, 6=RESPONSE
- * 
- * For simplicity, we implement OBEX as direct method calls over socket using Java serialization
- * of headers and data. This is sufficient for emulation between KEmulator instances.
+ *
+ * <p>Requests and responses use {@link ObexWireCodec}: a manually encoded,
+ * length-framed protocol with typed headers and UTF-8 fields. It intentionally
+ * does not use Java serialization or JDK modified-UTF encoding.</p>
  */
 public class ClientSessionImpl implements ClientSession {
 
@@ -60,38 +55,30 @@ public class ClientSessionImpl implements ClientSession {
         if (closed) throw new IOException("Closed");
         if (connected) throw new IOException("Already connected");
 
-        HeaderSetImpl req = headers instanceof HeaderSetImpl ? (HeaderSetImpl) headers : new HeaderSetImpl();
-        if (headers != null) {
-            try {
-                for (int id : headers.getHeaderList()) {
-                    req.setHeader(id, headers.getHeader(id));
-                }
-            } catch (IOException ignored) {}
-        }
+        HeaderSetImpl req = toImpl(headers);
         if (connectionId != -1) {
-            req.setHeader(HeaderSet.TARGET, String.valueOf(connectionId));
+            req.setHeader(HeaderSet.TARGET, Long.valueOf(connectionId));
         }
 
-        sendRequest(0, req, null);
-
-        HeaderSetImpl resp = readResponse();
+        sendRequest(ObexWireCodec.CONNECT, req, null);
+        HeaderSetImpl response = readResponse().headers;
         connected = true;
-        if (resp.getHeader(HeaderSet.WHO) != null) {
-            try {
-                connectionId = Long.parseLong(resp.getHeader(HeaderSet.WHO).toString());
-            } catch (Exception ignored) {}
+        Object who = response.getHeader(HeaderSet.WHO);
+        if (who instanceof Long) {
+            connectionId = ((Long) who).longValue();
+        } else if (who instanceof Integer) {
+            connectionId = ((Integer) who).longValue();
         }
-        return resp;
+        return response;
     }
 
     @Override
     public HeaderSet disconnect(HeaderSet headers) throws IOException {
         if (closed) throw new IOException("Closed");
-        HeaderSetImpl req = toImpl(headers);
-        sendRequest(1, req, null);
-        HeaderSetImpl resp = readResponse();
+        sendRequest(ObexWireCodec.DISCONNECT, toImpl(headers), null);
+        HeaderSetImpl response = readResponse().headers;
         connected = false;
-        return resp;
+        return response;
     }
 
     @Override
@@ -100,126 +87,80 @@ public class ClientSessionImpl implements ClientSession {
         HeaderSetImpl req = toImpl(headers);
         req.setHeader(0x100, backup ? Boolean.TRUE : Boolean.FALSE);
         req.setHeader(0x101, create ? Boolean.TRUE : Boolean.FALSE);
-        sendRequest(4, req, null);
-        return readResponse();
+        sendRequest(ObexWireCodec.SET_PATH, req, null);
+        return readResponse().headers;
     }
 
     @Override
     public HeaderSet delete(HeaderSet headers) throws IOException {
         if (closed) throw new IOException("Closed");
-        HeaderSetImpl req = toImpl(headers);
-        sendRequest(5, req, null);
-        return readResponse();
+        sendRequest(ObexWireCodec.DELETE, toImpl(headers), null);
+        return readResponse().headers;
     }
 
     @Override
     public Operation get(HeaderSet headers) throws IOException {
         if (closed) throw new IOException("Closed");
-        HeaderSetImpl req = toImpl(headers);
-        sendRequest(3, req, null);
-        // Read response: headers + data
-        HeaderSetImpl respHeaders = readResponse();
-        int dataLen = in.readInt();
-        byte[] data = new byte[dataLen];
-        if (dataLen > 0) in.readFully(data);
-        OperationImpl op = new OperationImpl(respHeaders, data, false);
-        op.setResponseCode(respHeaders.getResponseCode());
-        return op;
+        sendRequest(ObexWireCodec.GET, toImpl(headers), null);
+        ObexWireCodec.Response response = readResponse();
+        OperationImpl operation = new OperationImpl(response.headers, response.body, false);
+        operation.setResponseCode(response.headers.getResponseCode());
+        return operation;
     }
 
     @Override
     public Operation put(HeaderSet headers) throws IOException {
         if (closed) throw new IOException("Closed");
-        HeaderSetImpl req = toImpl(headers);
-        // For PUT, we need to return an Operation where client can write data
-        // We'll implement as: create OperationImpl that buffers output, and on close sends data
-        return new PutOperation(req);
+        // The operation buffers output locally and transmits one framed PUT on
+        // close, matching the previous emulation behaviour without object
+        // serialization.
+        return new PutOperation(toImpl(headers));
     }
 
     @Override
     public void close() throws IOException {
         if (closed) return;
-        closed = true;
         try {
             if (connected) {
                 try {
                     disconnect(null);
                 } catch (IOException ignored) {}
             }
-            in.close();
-            out.close();
-            socket.close();
         } finally {
+            closed = true;
+            try { in.close(); } catch (IOException ignored) {}
+            try { out.close(); } catch (IOException ignored) {}
+            socket.close();
             System.out.println("[BT] OBEX ClientSession closed: " + url);
         }
     }
 
-    // --- Internal helpers ---
+    private HeaderSetImpl toImpl(HeaderSet headerSet) {
+        if (headerSet == null) return new HeaderSetImpl();
+        if (headerSet instanceof HeaderSetImpl) return (HeaderSetImpl) headerSet;
 
-    private HeaderSetImpl toImpl(HeaderSet hs) {
-        if (hs == null) return new HeaderSetImpl();
-        if (hs instanceof HeaderSetImpl) return (HeaderSetImpl) hs;
-        HeaderSetImpl impl = new HeaderSetImpl();
+        HeaderSetImpl result = new HeaderSetImpl();
         try {
-            for (int id : hs.getHeaderList()) {
-                impl.setHeader(id, hs.getHeader(id));
+            for (int id : headerSet.getHeaderList()) {
+                result.setHeader(id, headerSet.getHeader(id));
             }
         } catch (IOException ignored) {}
-        return impl;
+        return result;
     }
 
-    private void sendRequest(int type, HeaderSetImpl headers, byte[] data) throws IOException {
+    private void sendRequest(int operation, HeaderSetImpl headers, byte[] body) throws IOException {
         synchronized (out) {
-            out.writeInt(0); // placeholder for length
-            out.writeByte(type);
-            // Write headers count
-            Map<Integer, Object> map = headers.getHeaders();
-            out.writeInt(map.size());
-            for (Map.Entry<Integer, Object> e : map.entrySet()) {
-                out.writeInt(e.getKey());
-                // Write value as UTF string for simplicity
-                String valStr = e.getValue() != null ? e.getValue().toString() : "";
-                out.writeUTF(valStr);
-                // Also write class name for type hint
-                out.writeUTF(e.getValue() != null ? e.getValue().getClass().getName() : "null");
-            }
-            if (data != null) {
-                out.writeInt(data.length);
-                out.write(data);
-            } else {
-                out.writeInt(0);
-            }
-            out.flush();
+            ObexWireCodec.writeRequest(out, operation, headers, body);
         }
     }
 
-    private HeaderSetImpl readResponse() throws IOException {
+    private ObexWireCodec.Response readResponse() throws IOException {
         synchronized (in) {
-            // Our simple protocol doesn't use length prefix for response yet, just read
-            int headerCount = in.readInt();
-            HeaderSetImpl hs = new HeaderSetImpl();
-            for (int i = 0; i < headerCount; i++) {
-                int id = in.readInt();
-                String valStr = in.readUTF();
-                String className = in.readUTF();
-                Object val = valStr;
-                // Try to reconstruct original type for common types
-                if (className.equals("java.lang.Long") || id == HeaderSet.LENGTH || id == HeaderSet.TIME_4_BYTE) {
-                    try { val = Long.parseLong(valStr); } catch (NumberFormatException ignored) {}
-                } else if (className.equals("java.lang.Integer")) {
-                    try { val = Integer.parseInt(valStr); } catch (NumberFormatException ignored) {}
-                }
-                hs.setHeader(id, val);
-            }
-            int respCode = in.readInt();
-            hs.setResponseCode(respCode);
-            return hs;
+            return ObexWireCodec.readResponse(in);
         }
     }
 
-    /**
-     * PUT operation that buffers data and sends on close.
-     */
+    /** PUT operation that buffers data and sends it as one framed request on close. */
     private class PutOperation extends OperationImpl {
         private final HeaderSetImpl requestHeaders;
         private boolean finished = false;
@@ -233,17 +174,10 @@ public class ClientSessionImpl implements ClientSession {
         public void close() throws IOException {
             if (finished) return;
             finished = true;
-            byte[] data = getOutputData();
-            // Send PUT request with data
-            sendRequest(2, requestHeaders, data);
-            HeaderSetImpl resp = readResponse();
-            setResponseCode(resp.getResponseCode());
+            sendRequest(ObexWireCodec.PUT, requestHeaders, getOutputData());
+            ObexWireCodec.Response response = readResponse();
+            setResponseCode(response.headers.getResponseCode());
             super.close();
-        }
-
-        @Override
-        public OutputStream openOutputStream() throws IOException {
-            return super.openOutputStream();
         }
     }
 }

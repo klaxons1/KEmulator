@@ -4,17 +4,17 @@ import javax.bluetooth.*;
 import javax.microedition.io.Connection;
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Central Bluetooth emulation stack.
- * Singleton that manages local device, discovery, services, and connections.
- * 
- * Emulation is done over LAN: UDP for discovery, TCP for data.
+ * Built-in LAN Bluetooth backend.
+ * Singleton that manages local device state, discovery, services, and
+ * connections using UDP for discovery and TCP for data.
  */
-public class BluetoothStack {
+public class BluetoothStack implements BluetoothBackend {
 
     private static BluetoothStack instance;
 
@@ -35,22 +35,21 @@ public class BluetoothStack {
     private final Map<Connection, ServiceRecord> notifierRecordMap = new ConcurrentHashMap<>();
 
     private BluetoothStack() throws IOException {
-        // Determine local BT address
-        String propAddr = System.getProperty(BluetoothConstants.PROP_BT_ADDRESS);
-        if (propAddr != null && BluetoothUtils.isValidBtAddress(propAddr)) {
-            localAddress = BluetoothUtils.normalizeAddress(propAddr);
+        // Host -D settings and persisted system-property maps are resolved by
+        // the common configuration helper before falling back to generated
+        // identity values.
+        String configuredAddress = BluetoothConfiguration.getValue(
+                BluetoothConstants.PROP_BT_ADDRESS, "KEM_BT_ADDRESS");
+        if (configuredAddress != null && BluetoothUtils.isValidBtAddress(configuredAddress)) {
+            localAddress = BluetoothUtils.normalizeAddress(configuredAddress);
         } else {
-            String envAddr = System.getenv("KEM_BT_ADDRESS");
-            if (envAddr != null && BluetoothUtils.isValidBtAddress(envAddr)) {
-                localAddress = BluetoothUtils.normalizeAddress(envAddr);
-            } else {
-                localAddress = BluetoothUtils.generateRandomAddress();
-            }
+            localAddress = BluetoothUtils.generateRandomAddress();
         }
 
-        String propName = System.getProperty(BluetoothConstants.PROP_BT_NAME);
-        if (propName != null && !propName.isEmpty()) {
-            friendlyName = propName;
+        String configuredName = BluetoothConfiguration.getValue(
+                BluetoothConstants.PROP_BT_NAME, "KEM_BT_NAME");
+        if (configuredName != null) {
+            friendlyName = configuredName;
         } else {
             friendlyName = "KEmulator-" + localAddress.substring(8);
         }
@@ -59,20 +58,27 @@ public class BluetoothStack {
         discoveryManager = new DiscoveryManager(this);
         sdpServer = new SDPServer(serviceRegistry, this);
 
-        // Start services
+        // Start services. If discovery cannot bind (for example because a
+        // configured port is in use), do not leave a partial SDP listener
+        // running behind a failed backend initialization.
         sdpServer.start();
-        discoveryManager.start();
+        try {
+            discoveryManager.start();
+        } catch (IOException e) {
+            sdpServer.stop();
+            throw e;
+        }
 
         System.out.println("[BT] Stack initialized: addr=" + localAddress + " name=" + friendlyName +
                 " ip=" + BluetoothUtils.getLocalIpString() + " sdpPort=" + sdpServer.getPort());
 
-        // Add shutdown hook to send BYE
+        // Keep direct BluetoothStack users safe too; public facades normally
+        // release the backend through BluetoothBackendProvider.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
-                discoveryManager.stop();
-                sdpServer.stop();
+                shutdown();
             } catch (Exception ignored) {}
-        }));
+        }, "KEm-BT-Shutdown"));
     }
 
     public static synchronized BluetoothStack getInstance() throws BluetoothStateException {
@@ -88,6 +94,23 @@ public class BluetoothStack {
 
     public static synchronized BluetoothStack getInstanceIfExists() {
         return instance;
+    }
+
+    /** Stops LAN listeners and drops this singleton so a later lifecycle can recreate it. */
+    @Override
+    public void shutdown() {
+        powerOn = false;
+        discoveryManager.stop();
+        sdpServer.stop();
+        serviceRegistry.clear();
+        notifierRecordMap.clear();
+        serviceSearchTransactions.clear();
+        synchronized (BluetoothStack.class) {
+            if (instance == this) {
+                instance = null;
+            }
+        }
+        BluetoothBackendProvider.release(this);
     }
 
     // --- Local device properties ---
@@ -281,8 +304,8 @@ public class BluetoothStack {
         record.setTcpPort(serverSocket.getLocalPort());
         record.setConnectionUrl(protocol + "://localhost:" + uuidOrPsm + ";name=" + serviceName);
 
-        // Set default attributes per spec
-        record.setAttributeValue(0x0000, new DataElement(DataElement.U_INT_4, (long) record.getHandle()));
+        // Set default attributes per spec. The registry assigns the
+        // ServiceRecordHandle (0x0000) when it registers this service.
         DataElement uuidSeq = new DataElement(DataElement.DATSEQ);
         try {
             UUID u = new UUID(uuidOrPsm, false);
@@ -386,8 +409,18 @@ public class BluetoothStack {
 
         System.out.println("[BT] Opening client connection to " + ip + ":" + serviceTcpPort + " for " + url);
 
-        // Open TCP socket
-        java.net.Socket socket = new java.net.Socket(ip, serviceTcpPort);
+        // Open TCP socket.  Use a bounded connect so an offline LAN peer does
+        // not indefinitely block the MIDlet's connection attempt.
+        java.net.Socket socket = new java.net.Socket();
+        try {
+            socket.connect(new java.net.InetSocketAddress(ip, serviceTcpPort),
+                    BluetoothConstants.SERVICE_SEARCH_TIMEOUT_MS);
+        } catch (IOException e) {
+            try {
+                socket.close();
+            } catch (IOException ignored) {}
+            throw e;
+        }
 
         if (parsed.protocol.equals("btspp")) {
             return new BTSPPConnection(socket, url);
@@ -422,6 +455,8 @@ public class BluetoothStack {
         String serviceName = parsed.getParam("name");
         if (serviceName == null) serviceName = "BT Service";
 
+        // Bind directly to port zero so the OS reserves the selected service
+        // port atomically (rather than probing first and introducing TOCTOU).
         ServerSocket ss = new ServerSocket(0);
         System.out.println("[BT] Opening server notifier: " + url + " -> TCP port " + ss.getLocalPort());
 

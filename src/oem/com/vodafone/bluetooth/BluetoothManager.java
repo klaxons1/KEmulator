@@ -1,22 +1,23 @@
 package com.vodafone.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
+import emulator.bluetooth.BluetoothBackend;
+import emulator.bluetooth.BluetoothBackendProvider;
 import javax.bluetooth.*;
 import java.io.IOException;
 
 /**
- * Full implementation of Vodafone BluetoothManager using LAN emulation.
+ * Vodafone BluetoothManager delegated to the selected Bluetooth backend.
  */
 public class BluetoothManager {
 
     private static BluetoothManager instance;
-    private final BluetoothStack stack;
+    private final BluetoothBackend backend;
     private SeekListener currentSeekListener;
     private boolean seeking = false;
 
     private BluetoothManager() throws IllegalStateException, IOException {
         try {
-            this.stack = BluetoothStack.getInstance();
+            this.backend = BluetoothBackendProvider.getInstance();
         } catch (BluetoothStateException e) {
             throw new IOException(e.getMessage());
         }
@@ -34,10 +35,18 @@ public class BluetoothManager {
     }
 
     public final synchronized String getFriendlyName() {
-        return stack.getFriendlyName();
+        return backend.getFriendlyName();
     }
 
     public final int getMaxDevices() {
+        String maximum = backend.getProperty("bluetooth.connected.devices.max");
+        if (maximum != null) {
+            try {
+                return Integer.parseInt(maximum);
+            } catch (NumberFormatException ignored) {}
+        }
+        // Preserve the legacy fallback when a backend does not advertise a
+        // transport-specific connection limit.
         return 7;
     }
 

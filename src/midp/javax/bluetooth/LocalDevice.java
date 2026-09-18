@@ -1,36 +1,39 @@
 package javax.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
+import emulator.bluetooth.BluetoothBackend;
+import emulator.bluetooth.BluetoothBackendProvider;
 import javax.microedition.io.Connection;
 
 /**
- * Full implementation of LocalDevice using LAN emulation.
+ * Full implementation of LocalDevice through the selected Bluetooth backend.
  */
 public class LocalDevice {
 
     private static LocalDevice instance;
-    private final BluetoothStack stack;
+    private final BluetoothBackend backend;
     private final DiscoveryAgent discoveryAgent;
 
     public LocalDevice() {
         try {
-            this.stack = BluetoothStack.getInstance();
-            this.discoveryAgent = new DiscoveryAgent(stack);
+            this.backend = BluetoothBackendProvider.getInstance();
+            this.discoveryAgent = new DiscoveryAgent(backend);
         } catch (BluetoothStateException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private LocalDevice(BluetoothStack stack) {
-        this.stack = stack;
-        this.discoveryAgent = new DiscoveryAgent(stack);
+    private LocalDevice(BluetoothBackend backend) {
+        this.backend = backend;
+        this.discoveryAgent = new DiscoveryAgent(backend);
     }
 
     public static LocalDevice getLocalDevice() throws BluetoothStateException {
         synchronized (LocalDevice.class) {
-            if (instance == null) {
-                BluetoothStack stack = BluetoothStack.getInstance();
-                instance = new LocalDevice(stack);
+            BluetoothBackend backend = BluetoothBackendProvider.getInstance();
+            // A backend lifecycle may have been released by CustomMethod.close
+            // or a test harness; do not retain a stopped singleton facade.
+            if (instance == null || instance.backend != backend) {
+                instance = new LocalDevice(backend);
             }
             return instance;
         }
@@ -41,49 +44,49 @@ public class LocalDevice {
     }
 
     public String getFriendlyName() {
-        return stack.getFriendlyName();
+        return backend.getFriendlyName();
     }
 
     public DeviceClass getDeviceClass() {
-        return new DeviceClass(stack.getDeviceClass());
+        return new DeviceClass(backend.getDeviceClass());
     }
 
     public boolean setDiscoverable(final int mode) throws BluetoothStateException {
-        return stack.setDiscoverable(mode);
+        return backend.setDiscoverable(mode);
     }
 
     public static String getProperty(final String property) {
         if (property == null) throw new NullPointerException();
         try {
-            BluetoothStack stack = BluetoothStack.getInstance();
-            String val = stack.getProperty(property);
-            if (val != null) return val;
+            BluetoothBackend backend = BluetoothBackendProvider.getInstance();
+            String value = backend.getProperty(property);
+            if (value != null) return value;
         } catch (BluetoothStateException e) {
-            // If stack not initialized, return null for most, but api version should still work
+            // If a backend cannot initialize, retain the historic API-version
+            // fallback below.
         }
-        // Fallback for some properties
         if ("bluetooth.api.version".equals(property)) return "1.1.1";
         if ("obex.api.version".equals(property)) return "1.1";
         return null;
     }
 
     public int getDiscoverable() {
-        return stack.getDiscoverable();
+        return backend.getDiscoverable();
     }
 
     public String getBluetoothAddress() {
-        return stack.getLocalAddress();
+        return backend.getLocalAddress();
     }
 
     public ServiceRecord getRecord(final Connection notifier) {
         if (notifier == null) throw new NullPointerException();
-        return stack.getRecord(notifier);
+        return backend.getRecord(notifier);
     }
 
     public void updateRecord(final ServiceRecord srvRecord) throws ServiceRegistrationException {
         if (srvRecord == null) throw new NullPointerException();
         try {
-            stack.updateRecord(srvRecord);
+            backend.updateRecord(srvRecord);
         } catch (ServiceRegistrationException e) {
             throw e;
         } catch (Exception e) {
@@ -91,14 +94,11 @@ public class LocalDevice {
         }
     }
 
-    /**
-     * JSR-82 1.1.1 method - not in earlier stub but part of spec.
-     */
+    /** JSR-82 1.1.1 method. */
     public static boolean isPowerOn() {
         try {
-            BluetoothStack stack = BluetoothStack.getInstanceIfExists();
-            if (stack == null) return true; // assume on if not initialized
-            return stack.isPowerOn();
+            BluetoothBackend backend = BluetoothBackendProvider.getInstanceIfExists();
+            return backend == null || backend.isPowerOn();
         } catch (Exception e) {
             return false;
         }

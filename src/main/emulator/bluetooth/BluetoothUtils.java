@@ -2,8 +2,12 @@ package emulator.bluetooth;
 
 import java.io.IOException;
 import java.net.*;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Utility methods for Bluetooth emulation.
@@ -53,6 +57,47 @@ public final class BluetoothUtils {
     }
 
     /**
+     * Returns a stable lookup key for a Bluetooth service identifier.
+     *
+     * JSR-82 applications commonly use an undashed 32-hex-digit UUID in a
+     * connection URL, while this emulator's UUID object exposes the same UUID
+     * with dashes.  SDP matching must regard those representations as equal.
+     * Short UUIDs are expanded to their Bluetooth-base 128-bit form as well.
+     * Non-UUID identifiers (for example an implementation-specific PSM) stay
+     * case-insensitive strings.
+     */
+    public static String normalizeServiceIdentifier(String identifier) {
+        if (identifier == null) return null;
+
+        String normalized = identifier.trim().toUpperCase();
+        String hex = normalized.replace("-", "");
+        if (!isHexadecimal(hex)) return normalized;
+
+        try {
+            if (hex.length() <= 8) {
+                return new javax.bluetooth.UUID(hex, true).toString128();
+            }
+            if (hex.length() == 32) {
+                return new javax.bluetooth.UUID(hex, false).toString128();
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Keep an unrecognised identifier as a case-insensitive string.
+        }
+        return normalized;
+    }
+
+    private static boolean isHexadecimal(String value) {
+        if (value == null || value.isEmpty()) return false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Get local IP address that is reachable on LAN.
      * Prefers non-loopback IPv4.
      */
@@ -87,6 +132,33 @@ public final class BluetoothUtils {
     public static String getLocalIpString() {
         InetAddress addr = getLocalInetAddress();
         return addr != null ? addr.getHostAddress() : "127.0.0.1";
+    }
+
+    /**
+     * Returns every IPv4 directed-broadcast address for active LAN interfaces.
+     * Sending to these addresses reaches a local subnet even on networks that
+     * discard the limited broadcast address (255.255.255.255).
+     */
+    public static List<InetAddress> getBroadcastAddresses() {
+        Set<InetAddress> addresses = new LinkedHashSet<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            if (interfaces == null) return new ArrayList<>(addresses);
+
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface ni = interfaces.nextElement();
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                for (InterfaceAddress interfaceAddress : ni.getInterfaceAddresses()) {
+                    InetAddress broadcast = interfaceAddress.getBroadcast();
+                    if (broadcast instanceof Inet4Address) {
+                        addresses.add(broadcast);
+                    }
+                }
+            }
+        } catch (SocketException ignored) {
+            // The limited broadcast and multicast fallbacks are still used.
+        }
+        return new ArrayList<>(addresses);
     }
 
     /**
@@ -159,12 +231,4 @@ public final class BluetoothUtils {
         }
     }
 
-    /**
-     * Find free TCP port.
-     */
-    public static int findFreePort() throws IOException {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
-    }
 }

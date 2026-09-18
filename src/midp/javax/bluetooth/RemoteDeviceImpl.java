@@ -1,8 +1,8 @@
 package javax.bluetooth;
 
 /**
- * Extended RemoteDevice with LAN emulation info.
- * Used internally by BluetoothStack.
+ * Extended RemoteDevice with LAN endpoint information.
+ * Used internally by the built-in LAN backend.
  */
 public class RemoteDeviceImpl extends RemoteDevice {
 

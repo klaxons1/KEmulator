@@ -1,6 +1,7 @@
 package javax.bluetooth;
 
-import emulator.bluetooth.BluetoothStack;
+import emulator.bluetooth.BluetoothBackend;
+import emulator.bluetooth.BluetoothBackendProvider;
 import javax.microedition.io.Connection;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -31,8 +32,8 @@ public class L2CAPConnectionNotifierImpl implements L2CAPConnectionNotifier {
 
     public static Connection open(String url) throws IOException {
         try {
-            BluetoothStack stack = BluetoothStack.getInstance();
-            return stack.openServerNotifier(url);
+            BluetoothBackend backend = BluetoothBackendProvider.getInstance();
+            return backend.openServerNotifier(url);
         } catch (BluetoothStateException e) {
             throw new IOException(e.getMessage());
         }

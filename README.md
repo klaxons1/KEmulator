@@ -29,6 +29,30 @@ Cross-platform J2ME emulator, based on decompiled KEmulator 1.0.3
 - Support of UEI integration with IDEs (Eclipse with MTJ, NetBeans, etc)
 - Tools for J2ME development with IntelliJ IDEA
 
+## Bluetooth LAN configuration
+
+The built-in JSR-82 backend discovers KEmulator peers on the local network and
+uses TCP for SDP and service traffic. It is selected by default; a future
+backend can be selected with `-Dkemulator.bluetooth.backend=<class>` when the
+class implements `emulator.bluetooth.BluetoothBackend`.
+
+Host settings may be passed with `-D`, saved in the existing global or
+per-application System Properties maps, or supplied as environment variables:
+
+- `kemulator.bluetooth.discovery.port` / `KEM_BT_DISCOVERY_PORT` — UDP discovery
+  port (default `63520`). **All peers using automatic discovery must use the
+  same value.**
+- `kemulator.bluetooth.sdp.port` / `KEM_BT_SDP_PORT` — optional fixed TCP SDP
+  port (default `0`, which reserves an OS-selected port).
+- `kemulator.bluetooth.peers` / `KEM_BT_PEERS` — manual peers for networks that
+  block multicast/broadcast: `BT_ADDRESS@host:sdpPort`, separated by commas or
+  semicolons, for example `001122AABBCC@192.168.1.42:63521`. They are exposed
+  through `DiscoveryAgent.retrieveDevices(DiscoveryAgent.PREKNOWN)` and can be
+  used for directed SDP/service lookup.
+
+The LAN protocol uses explicit bounded UTF-8 length fields and typed framed
+OBEX headers; it does not use Java object serialization.
+
 ## Requirements
 JRE:
 - Java 8 by Oracle
