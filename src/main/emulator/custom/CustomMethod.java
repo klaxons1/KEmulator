@@ -5,6 +5,7 @@ import emulator.AppSettings;
 import emulator.Emulator;
 import emulator.Permission;
 import emulator.Settings;
+import emulator.Timing;
 import emulator.custom.h.MethodInfo;
 import emulator.debug.Profiler;
 import emulator.graphics3D.lwjgl.Emulator3D;
@@ -53,7 +54,18 @@ public class CustomMethod {
 				t = t / AppSettings.speedModifier;
 			}
 		}
-		Thread.sleep(t);
+		// Precise sleep keeps self-paced game loops smooth regardless of OS timer granularity.
+		Timing.sleepMillis(t);
+	}
+
+	public static void sleep(long t, int nanos) throws InterruptedException {
+		if (nanos < 0 || nanos > 999999) {
+			throw new IllegalArgumentException("nanosecond timeout value out of range");
+		}
+		if (nanos >= 500000 || (nanos != 0 && t == 0)) {
+			t++;
+		}
+		sleep(t);
 	}
 
 
@@ -204,7 +216,7 @@ public class CustomMethod {
 		return res;
 	}
 
-	public static long currentTimeMillis() {
+	public static synchronized long currentTimeMillis() {
 		++Profiler.currentTimeMillisCallCount;
 		final long currentTimeMillis = System.currentTimeMillis();
 		final long n2;
@@ -296,6 +308,9 @@ public class CustomMethod {
 	}
 
 	public static void close() {
+		try {
+			Timing.shutdown();
+		} catch (Throwable ignored) {}
 		try {
 			Emulator.getEventQueue().stop();
 			Emulator3D.exit();

@@ -192,7 +192,8 @@ public final class EmulatorScreen implements
 	private final Vector<Long> touchIds = new Vector<Long>();
 	private int lastPointerX;
 	private int lastPointerY;
-	private boolean paintPending;
+	private volatile boolean paintPending;
+	private String lastStatusText;
 
 	private Menu commandsMenu;
 	private String leftSoftLabelText, rightSoftLabelText;
@@ -828,7 +829,12 @@ public final class EmulatorScreen implements
 			var9.append("x");
 		}
 		var9.append(AppSettings.speedModifier);
-		this.statusLabel.setText(var9.toString());
+		String text = var9.toString();
+		// updateStatus() runs on every frame, but the text rarely changes;
+		// skipping redundant setText() keeps the UI thread smooth.
+		if (text.equals(lastStatusText)) return;
+		lastStatusText = text;
+		this.statusLabel.setText(text);
 	}
 
 

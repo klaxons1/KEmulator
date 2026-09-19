@@ -25,11 +25,12 @@ public class Displayable {
 	int[] bounds;
 	Ticker ticker;
 	int tickerX;
-	private static long lastFrameTime;
+	private static final Object fpsLock = new Object();
+	private static long frameDeadline;
+	private static int lastLimitedRate;
 	private static long lastFpsUpdateTime;
 	private static int framesCount;
 	boolean fullScreen;
-	private static final long MILLI_TO_NANO = 1000000L;
 	boolean forceUpdateSize;
 
 	private Command leftCommand;
@@ -333,26 +334,48 @@ public class Displayable {
 		CapturePlayerImpl.draw(graphics, Emulator.getCurrentDisplay().getCurrent());
 	}
 
-	public static void _fpsLimiter(boolean b) {
-		if (b && (AppSettings.speedModifier == 1 || AppSettings.applySpeedToSleep) && AppSettings.frameRate <= 120) {
-			long elapsed = System.nanoTime() - lastFrameTime;
-			long var2 = (MILLI_TO_NANO * 1000L) / AppSettings.frameRate;
-
-			long delta = var2 - elapsed;
-			if (delta > 0) {
-				try {
-					Thread.sleep(delta / MILLI_TO_NANO/*, (int) (delta % MILLI_TO_NANO)*/);
-				} catch (Exception ignored) {}
+	public static void _fpsLimiter(boolean countFrame) {
+		long now = System.nanoTime();
+		int frameRate = AppSettings.frameRate;
+		boolean enabled = countFrame
+				&& (AppSettings.speedModifier == 1 || AppSettings.applySpeedToSleep)
+				&& frameRate > 0 && frameRate <= 120;
+		if (enabled) {
+			long period = 1000000000L / frameRate;
+			long waitNanos = 0;
+			synchronized (fpsLock) {
+				if (frameDeadline == 0 || frameRate != lastLimitedRate || now - frameDeadline > period) {
+					// First frame, settings changed, idle gap or over-budget frame:
+					// restart the cadence without sleeping to avoid bursts and added hitches.
+					frameDeadline = now;
+					lastLimitedRate = frameRate;
+				} else {
+					frameDeadline += period;
+					waitNanos = frameDeadline - now;
+				}
+			}
+			if (waitNanos > 0) {
+				Timing.sleepNanos(waitNanos);
+				now = System.nanoTime();
+			}
+		} else if (countFrame) {
+			// Limiter disabled (unlimited fps / fast-forward): drop pacing state
+			// so that re-enabling doesn't produce a spurious sleep.
+			synchronized (fpsLock) {
+				frameDeadline = 0;
 			}
 		}
-		lastFrameTime = System.nanoTime();
+		// NOTE: _fpsLimiter(false) is a watchdog tick: it must not touch pacing state,
+		// otherwise it injects a hitch into the frame cadence.
 
-		if (b) ++framesCount;
-		long l = lastFrameTime - lastFpsUpdateTime;
-		if (l >= 2000L * MILLI_TO_NANO) {
-			Profiler.FPS = (int) ((framesCount * 1000L * MILLI_TO_NANO) / l);
-			lastFpsUpdateTime = lastFrameTime;
-			framesCount = 0;
+		synchronized (fpsLock) {
+			if (countFrame) ++framesCount;
+			long window = now - lastFpsUpdateTime;
+			if (window >= 2000000000L) {
+				Profiler.FPS = window > 0 ? (int) ((framesCount * 1000000000L) / window) : 0;
+				lastFpsUpdateTime = now;
+				framesCount = 0;
+			}
 		}
 	}
 
@@ -384,8 +407,7 @@ public class Displayable {
 	}
 
 	static {
-		Displayable.lastFrameTime = System.nanoTime();
-		Displayable.lastFpsUpdateTime = Displayable.lastFrameTime;
+		Displayable.lastFpsUpdateTime = System.nanoTime();
 		Displayable.framesCount = 0;
 	}
 
