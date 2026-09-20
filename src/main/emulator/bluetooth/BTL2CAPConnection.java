@@ -49,6 +49,7 @@ public class BTL2CAPConnection implements L2CAPConnection {
 
     private volatile boolean closed;
     private IOException inputFailure;
+    private volatile long lastPacketAt = System.currentTimeMillis();
     private long sentPackets;
     private long sentBytes;
     private long receivedPacketCount;
@@ -106,6 +107,7 @@ public class BTL2CAPConnection implements L2CAPConnection {
             dataOut.writeShort(len);
             dataOut.write(data, 0, len);
             dataOut.flush();
+            lastPacketAt = System.currentTimeMillis();
             sentPackets++;
             sentBytes += len;
         }
@@ -187,7 +189,9 @@ public class BTL2CAPConnection implements L2CAPConnection {
 
         System.out.println("[BT] L2CAP connection closed: " + url
                 + " (sent " + sentPackets + " packet(s)/" + sentBytes + " byte(s), received "
-                + receivedPacketCount + " packet(s)/" + receivedBytes + " byte(s))");
+                + receivedPacketCount + " packet(s)/" + receivedBytes + " byte(s))"
+                + channelActivity() + " closed by " + Thread.currentThread().getName()
+                + describeCaller());
     }
 
     private void readPackets() {
@@ -214,6 +218,7 @@ public class BTL2CAPConnection implements L2CAPConnection {
                         return;
                     }
                     receivedPackets.addLast(packet);
+                    lastPacketAt = System.currentTimeMillis();
                     receivedPacketCount++;
                     receivedBytes += length;
                     receiveLock.notifyAll();
@@ -234,7 +239,8 @@ public class BTL2CAPConnection implements L2CAPConnection {
         synchronized (receiveLock) {
             if (inputFailure == null) {
                 inputFailure = failure;
-                System.out.println("[BT] L2CAP input failed for " + url + ": " + failure.getMessage());
+                System.out.println("[BT] L2CAP input failed for " + url + ": " + failure.getMessage()
+                        + channelActivity());
             }
             receiveLock.notifyAll();
         }
@@ -244,6 +250,44 @@ public class BTL2CAPConnection implements L2CAPConnection {
         IOException failure = new IOException("Connection closed");
         failure.initCause(cause);
         return failure;
+    }
+
+    /** Time since the last packet in either direction, for timeout diagnostics. */
+    private String channelActivity() {
+        return ", last packet " + (System.currentTimeMillis() - lastPacketAt) + " ms ago";
+    }
+
+    /**
+     * Short caller description. A close initiated by the emulator and one
+     * initiated by the MIDlet look identical in the log otherwise; the frames
+     * of the guest classes show which game code closed the connection.
+     */
+    private static String describeCaller() {
+        StackTraceElement[] trace;
+        try {
+            trace = new Throwable().getStackTrace();
+        } catch (Throwable t) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(" from ");
+        int shown = 0;
+        for (StackTraceElement e : trace) {
+            String cn = e.getClassName();
+            if (BTL2CAPConnection.class.getName().equals(cn)
+                    || BTL2CAPConnectionNotifier.class.getName().equals(cn)
+                    || "emulator.bluetooth.BluetoothStack".equals(cn)
+                    || "emulator.bluetooth.BluetoothService".equals(cn)
+                    || "javax.bluetooth.L2CAPConnectionImpl".equals(cn)
+                    || "javax.bluetooth.L2CAPConnectionNotifierImpl".equals(cn)
+                    || "javax.bluetooth.L2CAPConnection".equals(cn)) {
+                continue;
+            }
+            if (shown++ > 0) sb.append(" <- ");
+            sb.append(cn).append('.').append(e.getMethodName()).append(':').append(e.getLineNumber());
+            if (shown >= 4) break;
+        }
+        if (shown == 0) sb.append("emulator");
+        return sb.toString();
     }
 
     private void ensureOpen() throws IOException {

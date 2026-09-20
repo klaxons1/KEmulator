@@ -485,7 +485,36 @@ public final class EventQueue implements Runnable {
 		}
 	}
 
+	/**
+	 * Runs one canvas paint. {@code serviceRepaints()} performs this on the
+	 * calling thread, so a slow paint (first 3D frame of a scene, for example)
+	 * blocks whatever the MIDlet was doing - including its network exchange.
+	 * Games that poll a peer with a short deadline (Soccer 3D waits 3 s per
+	 * packet) treat that as a lost opponent and drop the connection, so a long
+	 * paint is logged instead of staying invisible.
+	 */
 	private void internalRepaint(int x, int y, int w, int h) {
+		long repaintStart = System.currentTimeMillis();
+		try {
+			repaintCanvas(x, y, w, h);
+		} finally {
+			long repaintSpent = System.currentTimeMillis() - repaintStart;
+			if (repaintSpent >= 1000L) {
+				String canvasName;
+				try {
+					Canvas canvas = Emulator.getCanvas();
+					canvasName = canvas == null ? "?" : canvas.getClass().getName();
+				} catch (Throwable t) {
+					canvasName = "?";
+				}
+				System.out.println("[KEm] repaint took " + repaintSpent + " ms on thread \""
+						+ Thread.currentThread().getName() + "\" (" + canvasName
+						+ "); a MIDlet waiting in serviceRepaints() was blocked for that long");
+			}
+		}
+	}
+
+	private void repaintCanvas(int x, int y, int w, int h) {
 		repaintPending = false;
 		try {
 			Canvas canvas = Emulator.getCanvas();
