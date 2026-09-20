@@ -14,7 +14,7 @@ public class DirectUtils {
 	}
 
 	public static DirectGraphics getDirectGraphics(Graphics paramGraphics) {
-		return new a(paramGraphics);
+		return new DirectGraphicsImpl(paramGraphics);
 	}
 
 	public static Font getFont(int face, int style, int height) {

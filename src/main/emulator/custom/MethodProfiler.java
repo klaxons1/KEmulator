@@ -19,30 +19,30 @@ import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 
-public final class h {
-	public static Hashtable methodProfiles;
+public final class MethodProfiler {
+	public static Hashtable<String, MethodInfo> profiles;
 
-	public h() {
+	private MethodProfiler() {
 		super();
 	}
 
-	public static void method591() {
+	public static void initializeProfiles() {
 		try {
 			for (int i = 0; i < Emulator.jarClasses.size(); ++i) {
 				final ClassNode classNode = new ClassNode();
-                try (InputStream method592 = getClassStream((String) Emulator.jarClasses.get(i))) {
-                    final ClassReader classReader = new ClassReader(method592);
+                try (InputStream classStream = getClassStream((String) Emulator.jarClasses.get(i))) {
+                    final ClassReader classReader = new ClassReader(classStream);
                     classReader.accept((ClassVisitor) classNode, AppSettings.asmSkipDebug ? ClassReader.SKIP_DEBUG : 0);
                 }
 				for (Object o : classNode.methods) {
 					final MethodInfo methodInfo = new MethodInfo(classNode, (MethodNode) o);
-					h.methodProfiles.put(methodInfo.method704(), methodInfo);
+					MethodProfiler.profiles.put(methodInfo.getQualifiedName(), methodInfo);
 				}
 			}
 			for (int j = 0; j < Emulator.jarClasses.size(); ++j) {
-				final InputStream method593 = getClassStream((String) Emulator.jarClasses.get(j));
-				new ClassReader(method593).accept((ClassVisitor) new TraceClassAdapter((ClassVisitor) new ClassWriter(0)), AppSettings.asmSkipDebug ? ClassReader.SKIP_DEBUG : 0);
-				method593.close();
+				final InputStream classStream = getClassStream((String) Emulator.jarClasses.get(j));
+				new ClassReader(classStream).accept((ClassVisitor) new TraceClassAdapter((ClassVisitor) new ClassWriter(0)), AppSettings.asmSkipDebug ? ClassReader.SKIP_DEBUG : 0);
+				classStream.close();
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -69,36 +69,36 @@ public final class h {
 	}
 
 	static final class TraceClassAdapter extends ClassVisitor implements Opcodes {
-		private String aString1366;
+		private String className;
 
 		public TraceClassAdapter(final ClassVisitor classVisitor) {
 			super(Opcodes.ASM4, classVisitor);
 		}
 
-		public final void visit(final int n, final int n2, final String aString1366, final String s, final String s2, final String[] array) {
-			super.visit(n, n2, this.aString1366 = aString1366, s, s2, array);
+		public final void visit(final int n, final int n2, final String className, final String s, final String s2, final String[] array) {
+			super.visit(n, n2, this.className = className, s, s2, array);
 		}
 
 		public final MethodVisitor visitMethod(int acc, final String name, final String desc, final String s3, final String[] array) {
 			final MethodVisitor visitMethod;
 			if ((visitMethod = super.visitMethod(acc, name, desc, s3, array)) != null) {
-				return (MethodVisitor) new TraceMethodAdapter(visitMethod, (MethodInfo) h.methodProfiles.get(this.aString1366 + '.' + name + desc));
+				return (MethodVisitor) new TraceMethodAdapter(visitMethod, MethodProfiler.profiles.get(this.className + '.' + name + desc));
 			}
 			return null;
 		}
 	}
 
 	static final class TraceMethodAdapter extends TraceMethodVisitor implements Opcodes {
-		private MethodInfo ane1200;
+		private MethodInfo methodInfo;
 
-		public TraceMethodAdapter(final MethodVisitor methodVisitor, final MethodInfo ane1200) {
+		public TraceMethodAdapter(final MethodVisitor methodVisitor, final MethodInfo methodInfo) {
 			super(methodVisitor);
-			this.ane1200 = ane1200;
+			this.methodInfo = methodInfo;
 		}
 
 		public final void visitMethodInsn(final int n, final String s, final String s2, final String s3) {
 			final MethodInfo methodInfo;
-			if ((methodInfo = (MethodInfo) h.methodProfiles.get(s + '.' + s2 + s3)) != null) {
+			if ((methodInfo = MethodProfiler.profiles.get(s + '.' + s2 + s3)) != null) {
 				final MethodInfo methodInfo2 = methodInfo;
 				++methodInfo2.refCount;
 			}
@@ -106,8 +106,8 @@ public final class h {
 		}
 
 		public final void visitEnd() {
-			if (this.ane1200 != null) {
-				this.ane1200.disassembledCode = ((AbstractVisitor) this).getText();
+			if (this.methodInfo != null) {
+				this.methodInfo.disassembledCode = ((AbstractVisitor) this).getText();
 			}
 			super.visitEnd();
 		}
@@ -123,42 +123,42 @@ public final class h {
 		public int codeSize; //amount of instructions?
 		public int refCount;
 		public int callCount;
-		public long aLong1174;
+		public long invocationStartTime;
 		public long totalExecutionTime;
 		public float averageExecutionTime;
 		public float timePercentage;
-		static StringBuffer byteCodeBuf;
+		private static final StringBuilder bytecodeBuffer = new StringBuilder();
 
-		public MethodInfo(final ClassNode aClassNode1169, final MethodNode aMethodNode1170) {
+		public MethodInfo(final ClassNode classNode, final MethodNode methodNode) {
 			super();
-			this.classNode = aClassNode1169;
-			this.methodNode = aMethodNode1170;
-			this.methodSignature = method703(this.methodNode);
+			this.classNode = classNode;
+			this.methodNode = methodNode;
+			this.methodSignature = formatMethodSignature(this.methodNode);
 			this.codeSize = this.methodNode.instructions.size();
 			this.refCount = 0;
 			this.className = this.classNode.name.replace('/', '.');
 			this.methodName = this.methodNode.name;
 		}
 
-		private static String method703(final MethodNode methodNode) {
+		private static String formatMethodSignature(final MethodNode methodNode) {
 			final Method method = new Method(methodNode.name, methodNode.desc);
-			StringBuilder s = new StringBuilder(method.getReturnType().getClassName() + " " + methodNode.name + "(");
+			StringBuilder signature = new StringBuilder(method.getReturnType().getClassName() + " " + methodNode.name + "(");
 			final Type[] argumentTypes = method.getArgumentTypes();
 			for (int i = 0; i < argumentTypes.length; ++i) {
-				s.append(argumentTypes[i].getClassName()).append((i >= argumentTypes.length - 1) ? "" : ", ");
+				signature.append(argumentTypes[i].getClassName()).append((i >= argumentTypes.length - 1) ? "" : ", ");
 			}
-			return s.append(")").toString();
+			return signature.append(")").toString();
 		}
 
-		public final String method704() {
+		public final String getQualifiedName() {
 			return this.className + '.' + this.methodName + this.methodNode.desc;
 		}
 
 		public final String toString() {
-			return this.method704() + " refCount=" + this.refCount;
+			return this.getQualifiedName() + " refCount=" + this.refCount;
 		}
 
-		public final String method705(final boolean b, final boolean b2) {
+		public final String formatDetails(final boolean showLineNumbers, final boolean showFrames) {
 			String s = "\nname      : " + this.methodNode.name + "\nsignature : " + this.methodNode.signature + "\naccess    : " + getAccess(this.methodNode.access) + "\ndesc      : " + this.methodNode.desc + "\nmaxStack  : " + this.methodNode.maxStack + "\nmaxLocals : " + this.methodNode.maxLocals + "\n";
 			if (this.methodNode.exceptions != null && this.methodNode.exceptions.size() > 0) {
 				StringBuilder s2 = new StringBuilder(s + "\nExceptions: " + this.methodNode.exceptions.size());
@@ -169,15 +169,15 @@ public final class h {
 				s = s2 + "\n";
 			}
 			if (this.disassembledCode != null) {
-				MethodInfo.byteCodeBuf.setLength(0);
+				MethodInfo.bytecodeBuffer.setLength(0);
 				final Iterator<String> iterator2 = this.disassembledCode.iterator();
 				while (iterator2.hasNext()) {
 					final String s3;
-					if ((!(s3 = iterator2.next()).startsWith("FRAME ") || b2) && (!s3.startsWith("    LINENUMBER") || b)) {
-						MethodInfo.byteCodeBuf.append(s3);
+					if ((!(s3 = iterator2.next()).startsWith("FRAME ") || showFrames) && (!s3.startsWith("    LINENUMBER") || showLineNumbers)) {
+						MethodInfo.bytecodeBuffer.append(s3);
 					}
 				}
-				s = s + "\nByteCode:\n" + MethodInfo.byteCodeBuf.toString() + "\n";
+				s = s + "\nByteCode:\n" + MethodInfo.bytecodeBuffer.toString() + "\n";
 			}
 			return s;
 		}
@@ -212,8 +212,5 @@ public final class h {
 			return s;
 		}
 
-		static {
-			MethodInfo.byteCodeBuf = new StringBuffer();
-		}
 	}
 }

@@ -5,7 +5,7 @@ import emulator.AppSettings;
 import emulator.Emulator;
 import emulator.Permission;
 import emulator.Settings;
-import emulator.custom.h.MethodInfo;
+import emulator.custom.MethodProfiler.MethodInfo;
 import emulator.debug.Profiler;
 import emulator.graphics3D.lwjgl.Emulator3D;
 import emulator.ui.swt.EmulatorScreen;
@@ -16,10 +16,10 @@ import java.io.*;
 import java.util.Hashtable;
 
 public class CustomMethod {
-	private static long aLong13;
-	private static long aLong17;
-	private static Hashtable aHashtable14;
-	private static Thread aThread15;
+	private static long emulatedTime;
+	private static long lastSystemTime;
+	private static Hashtable threadDepths;
+	private static Thread lastTrackedThread;
 	//static StringBuffer aStringBuffer16;
 	static String trackStr;
 	private static BufferedWriter trackWriter;
@@ -209,15 +209,15 @@ public class CustomMethod {
 		final long currentTimeMillis = System.currentTimeMillis();
 		final long n2;
 		final long n = ((n2 = AppSettings.speedModifier) < 0L) ? ((100L + n2 << 10) / 100L) : (n2 << 10);
-		if (Settings.aLong1235 > 0L) {
-			CustomMethod.aLong13 += n * (currentTimeMillis - CustomMethod.aLong17 - Settings.aLong1235) >> 10;
-			CustomMethod.aLong17 = currentTimeMillis;
-			Settings.aLong1235 = 0L;
+		if (Settings.pausedTime > 0L) {
+			CustomMethod.emulatedTime += n * (currentTimeMillis - CustomMethod.lastSystemTime - Settings.pausedTime) >> 10;
+			CustomMethod.lastSystemTime = currentTimeMillis;
+			Settings.pausedTime = 0L;
 		} else {
-			CustomMethod.aLong13 += n * (currentTimeMillis - CustomMethod.aLong17) >> 10;
-			CustomMethod.aLong17 = currentTimeMillis;
+			CustomMethod.emulatedTime += n * (currentTimeMillis - CustomMethod.lastSystemTime) >> 10;
+			CustomMethod.lastSystemTime = currentTimeMillis;
 		}
-		return CustomMethod.aLong13;
+		return CustomMethod.emulatedTime;
 	}
 
 	public static InputStream getResourceAsStream(final Object o, final String s) {
@@ -237,57 +237,57 @@ public class CustomMethod {
 		}
 	}
 
-	private static int method16() {
+	private static int enterTrackedMethod() {
 		final Thread currentThread = Thread.currentThread();
 		int n;
-		if (CustomMethod.aThread15 != null && CustomMethod.aThread15 != currentThread) {
+		if (CustomMethod.lastTrackedThread != null && CustomMethod.lastTrackedThread != currentThread) {
 			n = 0;
 			trackStr = "=====" + currentThread.toString() + "=====\n";
 			showTrackInfo(trackStr);
 		} else {
 			final Integer value;
-			n = (((value = (Integer) CustomMethod.aHashtable14.get(currentThread)) == null) ? 0 : value);
+			n = (((value = (Integer) CustomMethod.threadDepths.get(currentThread)) == null) ? 0 : value);
 		}
-		CustomMethod.aHashtable14.put(currentThread, n + 1);
-		CustomMethod.aThread15 = currentThread;
+		CustomMethod.threadDepths.put(currentThread, n + 1);
+		CustomMethod.lastTrackedThread = currentThread;
 		return n;
 	}
 
-	private static void method17() {
+	private static void leaveTrackedMethod() {
 		final Thread currentThread = Thread.currentThread();
 		final Object value;
-		if ((value = CustomMethod.aHashtable14.get(currentThread)) != null) {
-			CustomMethod.aHashtable14.put(currentThread, Math.max((Integer) value - 1, 0));
+		if ((value = CustomMethod.threadDepths.get(currentThread)) != null) {
+			CustomMethod.threadDepths.put(currentThread, Math.max((Integer) value - 1, 0));
 		}
 	}
 
 	public static void beginMethod(final String s) {
-		if (h.methodProfiles == null) {
-			h.methodProfiles = new Hashtable();
-			h.method591();
+		if (MethodProfiler.profiles == null) {
+			MethodProfiler.profiles = new Hashtable<String, MethodInfo>();
+			MethodProfiler.initializeProfiles();
 		}
-		final h.MethodInfo methodInfo;
-		if ((methodInfo = (MethodInfo) h.methodProfiles.get(s)) != null) {
-			final int method16 = method16();
+		final MethodProfiler.MethodInfo methodInfo;
+		if ((methodInfo = (MethodInfo) MethodProfiler.profiles.get(s)) != null) {
+			final int nestingDepth = enterTrackedMethod();
 			++methodInfo.callCount;
 			trackStr = "";
-			for (int i = 0; i < method16; ++i) {
+			for (int i = 0; i < nestingDepth; ++i) {
 				trackStr += ("  ");
 			}
 			trackStr += s + "\n";
 			showTrackInfo(trackStr);
-			methodInfo.aLong1174 = System.currentTimeMillis();
+			methodInfo.invocationStartTime = System.currentTimeMillis();
 		}
 	}
 
 	public static void endMethod(final String s) {
-		final h.MethodInfo methodInfo;
-		if ((methodInfo = (MethodInfo) h.methodProfiles.get(s)) != null) {
+		final MethodProfiler.MethodInfo methodInfo;
+		if ((methodInfo = (MethodInfo) MethodProfiler.profiles.get(s)) != null) {
 			if (methodInfo.callCount > 0) {
-				methodInfo.totalExecutionTime += System.currentTimeMillis() - methodInfo.aLong1174;
+				methodInfo.totalExecutionTime += System.currentTimeMillis() - methodInfo.invocationStartTime;
 				methodInfo.averageExecutionTime = (float) methodInfo.totalExecutionTime / methodInfo.callCount;
 			}
-			method17();
+			leaveTrackedMethod();
 		}
 	}
 
@@ -355,7 +355,7 @@ public class CustomMethod {
 	}
 
 	static {
-		CustomMethod.aHashtable14 = new Hashtable();
+		CustomMethod.threadDepths = new Hashtable();
 		try {
 			fw = new FileWriter(Emulator.getUserPath() + "/track.txt", false);
 			trackWriter = new BufferedWriter(fw);
