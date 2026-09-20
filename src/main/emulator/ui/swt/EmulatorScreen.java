@@ -2221,7 +2221,8 @@ public final class EmulatorScreen implements
 		caret._keyPressed(keyEvent);
 		if (keyEvent.character >= 33 && keyEvent.character <= 90 && Settings.canvasKeyboard && !(n >= 48 && n <= 57))
 			n = keyEvent.character;
-		handleKeyPress(n);
+		// keys of the numeric keypad stay bound to the device keypad mapping
+		handleKeyPress(n, KeyMapping.isKeypadKey(keyEvent.keyCode));
 	}
 
 	public void keyReleased(final KeyEvent keyEvent) {
@@ -2231,15 +2232,19 @@ public final class EmulatorScreen implements
 		int n = keyEvent.keyCode & 0xFEFFFFFF;
 		if (keyEvent.character >= 33 && keyEvent.character <= 90 && Settings.canvasKeyboard && !(n >= 48 && n <= 57))
 			n = keyEvent.character;
-		handleKeyRelease(n);
+		handleKeyRelease(n, KeyMapping.isKeypadKey(keyEvent.keyCode));
 	}
 
 
 	void handleKeyPress(int n) {
+		handleKeyPress(n, true);
+	}
+
+	void handleKeyPress(int n, boolean keypad) {
 		if (this.pauseState == 0 || Settings.playingRecordedKeys || ((n < 0 || n >= 256) && !Settings.canvasKeyboard)) {
 			return;
 		}
-		handleKeyPressMapped(mapKey(n));
+		handleKeyPressMapped(mapKey(n, keypad));
 	}
 
 	void handleKeyPressMapped(String r) {
@@ -2274,10 +2279,14 @@ public final class EmulatorScreen implements
 	}
 
 	void handleKeyRelease(int n) {
+		handleKeyRelease(n, true);
+	}
+
+	void handleKeyRelease(int n, boolean keypad) {
 		if (this.pauseState == 0 || Settings.playingRecordedKeys || ((n < 0 || n >= 256) && !Settings.canvasKeyboard)) {
 			return;
 		}
-		handleKeyReleaseMapped(mapKey(n));
+		handleKeyReleaseMapped(mapKey(n, keypad));
 	}
 
 	void handleKeyReleaseMapped(String r) {
@@ -2303,7 +2312,7 @@ public final class EmulatorScreen implements
 
 	void onKeyUp(int n, Shell shell) {
 		if (shell != this.shell) {
-			((SWTFrontend) Emulator.getEmulator()).getM3GView().keyReleased(n);
+			((SWTFrontend) Emulator.getEmulator()).getM3GView().keyReleased(n & 0xFEFFFFFF);
 			return;
 		}
 		if (n <= 0 || this.pauseState == 0 || Settings.playingRecordedKeys) {
@@ -2332,6 +2341,10 @@ public final class EmulatorScreen implements
 
 	private String mapKey(int n) {
 		return KeyMapping.replaceKey(n);
+	}
+
+	private String mapKey(int n, boolean keypad) {
+		return KeyMapping.replaceKey(n, keypad);
 	}
 
 	public void mouseDoubleClick(final MouseEvent mouseEvent) {

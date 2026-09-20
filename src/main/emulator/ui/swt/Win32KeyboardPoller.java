@@ -5,6 +5,7 @@ package emulator.ui.swt;
 
 import emulator.ReflectUtil;
 import emulator.Utils;
+import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Shell;
 
@@ -96,7 +97,9 @@ public class Win32KeyboardPoller {
 		if (n >= 124 && n <= 186) return -1;
 		if (n > 190) return -1;
 		if (n >= 'A' && n <= 'Z') n -= 'A' - 'a';
-		else if (n >= 96 && n <= 105) n = n - 96 + '0';
+		// keys of the numeric keypad are reported in the same way as SWT does it,
+		// so that they are resolved through the device keypad mapping
+		else if (n >= 96 && n <= 105) n = n - 96 + SWT.KEYPAD_0;
 		else if (n >= 112 && n <= 123) n = n - 112 + 10;
 		else switch (n) {
 				case 33:

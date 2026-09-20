@@ -120,12 +120,11 @@ public class SWTScreen {
 				((EmulatorScreen) Emulator.getEmulator().getScreen()).keyPressed(keyEvent);
 				return;
 			}
-			int n = keyEvent.keyCode & 0xFEFFFFFF;
 			Displayable d = Emulator.getCurrentDisplay().getCurrent();
 			String r;
 			if ((keyEvent.character >= 33 && keyEvent.character <= 90)
-					|| (r = KeyMapping.replaceKey(n)) == null) return;
-			n = Integer.parseInt(r);
+					|| (r = KeyMapping.replaceKey(keyEvent.keyCode)) == null) return;
+			int n = Integer.parseInt(r);
 			if (KeyMapping.isLeftSoft(n) || KeyMapping.isRightSoft(n)) {
 				d.handleSoftKeyAction(n, true);
 			}

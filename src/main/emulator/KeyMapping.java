@@ -9,6 +9,13 @@ import java.util.Stack;
  * Keyboard
  */
 public final class KeyMapping {
+	/**
+	 * SWT.KEYCODE_BIT. SWT marks virtual key codes with this bit, in particular the
+	 * numeric keypad keys, which are reported as KEYCODE_BIT + '0'..'9'.
+	 * Keys of the main keyboard row are reported without this bit.
+	 */
+	private static final int KEYCODE_BIT = 0x1000000;
+
 	private static Hashtable deviceKeyToStr;
 	private static Hashtable strToPCKey;
 	private static Hashtable keysTable;
@@ -141,13 +148,13 @@ public final class KeyMapping {
 
 	public static boolean isLeftSoft(final int n) {
 		if (KeyMapping.deviceKeycodes[17].isEmpty()) return false;
-		String s = replaceKey(Integer.parseInt(KeyMapping.deviceKeycodes[17]));
+		String s = replaceKey(Integer.parseInt(KeyMapping.deviceKeycodes[17]), true);
 		return s != null && Integer.parseInt(s) == n;
 	}
 
 	public static boolean isRightSoft(final int n) {
 		if (KeyMapping.deviceKeycodes[18].isEmpty()) return false;
-		String s = replaceKey(Integer.parseInt(KeyMapping.deviceKeycodes[18]));
+		String s = replaceKey(Integer.parseInt(KeyMapping.deviceKeycodes[18]), true);
 		return s != null && Integer.parseInt(s) == n;
 	}
 
@@ -164,12 +171,50 @@ public final class KeyMapping {
 		method606();
 	}
 
+	/**
+	 * Returns true if the code was reported for a key of the numeric keypad of the PC
+	 * keyboard. SWT marks such keys with the KEYCODE_BIT flag, and once the flag is
+	 * masked their codes are the same as the codes of the '0'..'9' and 'P' keys, so by
+	 * the code alone a key of the numeric keypad can not be told apart from a typed
+	 * character.
+	 */
+	public static boolean isKeypadKey(final int n) {
+		if ((n & KEYCODE_BIT) == 0) {
+			return false;
+		}
+		final int code = n & ~KEYCODE_BIT;
+		return (code >= '0' && code <= '9') || code == 80;
+	}
+
 	public static String replaceKey(int n) {
-		if (n == 80) {
+		return replaceKey(n, isKeypadKey(n));
+	}
+
+	/**
+	 * Translates a PC key code into an emulated (MIDlet) key code.
+	 *
+	 * @param keypad true if the code was produced by a key of the emulated device
+	 *               keypad: a key of the numeric keypad of the PC keyboard (see
+	 *               {@link #isKeypadKey(int)}) or a code taken from the key mapping
+	 *               itself (deviceKeycodes). Such codes are always resolved through the
+	 *               key mapping, while keys of the main keyboard row may be passed
+	 *               through as typed characters when QWERTY mode
+	 *               (Settings.canvasKeyboard) is enabled.
+	 */
+	public static String replaceKey(int n, final boolean keypad) {
+		n &= ~KEYCODE_BIT;
+		// The numeric keypad Enter key is reported by SWT as KEYCODE_BIT + 80, i.e. it
+		// becomes 80 after masking, which is also the key code of the 'P' key. Keypad
+		// Enter is always the Enter key, the 'P' key is remapped to it only outside
+		// QWERTY mode, as it was before the KEYCODE_BIT flag was taken into account.
+		if (n == 80 && (keypad || !Settings.canvasKeyboard)) {
 			n = 13;
 		}
 
-		if (Settings.canvasKeyboard && (n >= '0' && n <= '9')) {
+		// Digits of the main keyboard row are typed as is in QWERTY mode, but the
+		// numeric keypad always works as the keypad of the emulated device, so it
+		// must respect the user's key mapping even in QWERTY mode.
+		if (Settings.canvasKeyboard && !keypad && (n >= '0' && n <= '9')) {
 			return String.valueOf(n);
 		}
 		final Object value;
@@ -182,7 +227,11 @@ public final class KeyMapping {
 		}
 		final Object value2;
 		if ((value2 = KeyMapping.aHashtable1067.get(method594)) == null) {
-			if (Settings.canvasKeyboard) {
+			// Unmapped keys are typed as characters in QWERTY mode, but the keys of the
+			// numeric keypad are not: a key that is not present in the key mapping does
+			// nothing, otherwise it would act as a device keypad key by its own name
+			// (SWT.KEYPAD_2 would act as the phone key NUM_2 and so on).
+			if (Settings.canvasKeyboard && !keypad) {
 				if ((n >= 32 && n <= 126) || n == 8) {
 					return String.valueOf(n);
 				}

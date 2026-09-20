@@ -157,7 +157,8 @@ public class Controllers {
 	}
 
 	private static int method747(String s) {
-		if (s == null || s.isEmpty() || (s = KeyMapping.replaceKey(Integer.parseInt(s))) == null)
+		// codes of the device keypad mapping are always resolved through the key mapping
+		if (s == null || s.isEmpty() || (s = KeyMapping.replaceKey(Integer.parseInt(s), true)) == null)
 			return 10000;
 		return Integer.parseInt(s);
 	}
