@@ -204,7 +204,16 @@ public class CustomMethod {
 		return res;
 	}
 
-	public static long currentTimeMillis() {
+	/**
+	 * The bytecode transformer routes every MIDlet System.currentTimeMillis()
+	 * call through this virtual clock.  A MIDlet can make those calls from its
+	 * UI and worker threads at the same time, so updating the two clock fields
+	 * must be one operation.  Without the lock, a delayed caller can restore an
+	 * older {@code aLong17} after another caller has advanced it.  The next call
+	 * then counts the same wall-clock interval twice and can make application
+	 * timeouts expire early.
+	 */
+	public static synchronized long currentTimeMillis() {
 		++Profiler.currentTimeMillisCallCount;
 		final long currentTimeMillis = System.currentTimeMillis();
 		final long n2;
