@@ -163,9 +163,12 @@ objects are:
 | `btgoep` | `obex.ClientSessionImpl` over TCP |
 
 SPP is a raw TCP stream. L2CAP preserves packet boundaries as
-`unsigned-short big-endian length + payload`; MTUs are clamped to 48..672 and a
-receive buffer smaller than the packet gets the prefix while the remainder is
-discarded, matching the existing JSR-82 emulation behavior.
+`unsigned-short big-endian length + payload`. A per-connection reader blocks on
+the TCP stream and queues complete packets, so `ready()` answers from actual
+packet state rather than from `InputStream.available()`; a `true` result can be
+followed by `receive()` without blocking. MTUs from both client and server URLs
+are clamped to 48..672. A receive buffer smaller than the packet gets the
+prefix while the remainder is discarded, matching JSR-82 behavior.
 
 ## Shared binary primitives
 
