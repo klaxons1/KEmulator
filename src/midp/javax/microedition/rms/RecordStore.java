@@ -237,14 +237,6 @@ public class RecordStore {
 		String rootPath = homeRootPath + encodeBase64(name) + File.separatorChar;
 		if (findRecordStore(rootPath) != null) {
 			logln("tried to delete active store");
-			// A MIDlet that uses the "delete, then add, then read record #1"
-			// pattern (Art Of War 2 builds its network snapshot that way) has no
-			// way to notice this failure: it swallows the exception, the new
-			// data is appended as record #2 and later reads still return
-			// record #1. Make that visible instead of silently sending stale
-			// state over the network.
-			System.out.println("[RMS] WARNING: refused to delete record store \"" + name
-					+ "\" because it is still open; the store keeps its old record #1");
 			throw new RecordStoreException("Cannot delete currently opened record store: " + name);
 		}
 		File file = new File(rootPath);
@@ -329,12 +321,6 @@ public class RecordStore {
 		} catch (ArrayIndexOutOfBoundsException e) {
 			throw e;
 		} catch (Exception e) {
-			// The record is listed in the index but its file cannot be read -
-			// e.g. another emulator instance sharing this RMS folder has just
-			// deleted or rewritten it. A game that then keeps its previous
-			// snapshot will never resynchronize.
-			System.out.println("[RMS] WARNING: cannot read record " + recordId + " of \"" + name
-					+ "\": " + e);
 			throw new RecordStoreException("recordId=" + recordId, e);
 		}
 	}
