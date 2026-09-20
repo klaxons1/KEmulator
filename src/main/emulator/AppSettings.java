@@ -4,6 +4,7 @@ Copyright (c) 2026 Arman Jussupgaliyev
 package emulator;
 
 import emulator.ui.IEmulatorFrontend;
+import emulator.ui.ILogStream;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -134,6 +135,7 @@ public class AppSettings {
 		asyncFlush = true;
 		startAppOnResume = true;
 
+		Settings.ignoreServiceRepaintsForMidlet = false;
 		j2lStyleFpsLimit = false;
 		motorolaSoftKeyFix = false;
 		keyPressOnRepeat = false;
@@ -300,6 +302,23 @@ public class AppSettings {
 				m3gFlushImmediately = true;
 			} else if (midletName.contains("勇闯恶魔城-Konami正版")) {
 				j2lStyleFpsLimit = true;
+			} else if (midletName.contains("Soccer 3D")) {
+				// This MIDlet runs its whole 100 ms game tick on one thread:
+				// the L2CAP exchange (it waits up to 3 s of guest time for the
+				// opponent's packet) and then repaint() + serviceRepaints(),
+				// which paints the frame on that same thread. The first frames
+				// of the 3D match therefore hold the tick for as long as the
+				// emulator needs to draw them; the opponent sees more than its
+				// 3 s of silence and drops the match before the game ever gets
+				// to send. Letting the event thread draw the frame keeps the
+				// exchange inside its deadline, exactly like the user-visible
+				// IgnoreServiceRepaints property, but only for this game.
+				Settings.ignoreServiceRepaintsForMidlet = true;
+				ILogStream log = emulator.getLogStream();
+				if (log != null) {
+					log.println("[KEm] Soccer 3D: serviceRepaints() will not block the game loop, "
+							+ "so the Bluetooth exchange is not delayed by 3D frames");
+				}
 			}
 		}
 

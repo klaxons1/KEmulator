@@ -100,6 +100,13 @@ public final class Settings {
 	public static boolean hideDisplayableOnMinimize;
 	public static boolean ignoreRegionRepaint;
 	public static boolean ignoreServiceRepaints;
+	/**
+	 * Same effect as {@link #ignoreServiceRepaints}, but decided per MIDlet by
+	 * the presets in {@code AppSettings} and never stored in property.txt, so a
+	 * game that cannot cope with a blocked game loop does not change the
+	 * behaviour of every other game. Soccer 3D needs it: see AppSettings.init.
+	 */
+	public static boolean ignoreServiceRepaintsForMidlet;
 	public static boolean dontRepaintOnSetCurrent;
 	public static boolean bypassVserv = true;
 	public static boolean pollKeyboardOnRepaint = true;

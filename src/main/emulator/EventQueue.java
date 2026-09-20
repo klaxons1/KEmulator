@@ -265,7 +265,10 @@ public final class EventQueue implements Runnable {
 	}
 
 	public void serviceRepaints() {
-		if (Settings.ignoreServiceRepaints) return;
+		// Settings.ignoreServiceRepaintsForMidlet is set by the MIDlet presets in
+		// AppSettings (Soccer 3D) - returning here lets the event thread draw the
+		// pending frame instead of making the MIDlet's own thread wait for it.
+		if (Settings.ignoreServiceRepaints || Settings.ignoreServiceRepaintsForMidlet) return;
 		synchronized (callbackLock) {
 			if (!repaintPending) return;
 			repaintPending = false;
