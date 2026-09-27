@@ -29,8 +29,8 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 
 	public static Set<Player> players = Collections.newSetFromMap(new WeakHashMap());
 	Object sequence;
-	Thread playerThread;
-	boolean complete;
+	volatile Thread playerThread;
+	volatile boolean complete;
 	private int state;
 	private String contentType;
 	private Vector<PlayerListener> listeners;
@@ -49,7 +49,7 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 	private final Object playLock = new Object();
 	private Sequencer midiSequencer;
 	private Synthesizer midiSynthesizer;
-	private boolean stop;
+	private volatile boolean stop;
 	private InputStream inputStream;
 	private boolean realized;
 
@@ -830,21 +830,30 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 						sequencer.stop();
 					}
 				} else if (sequence instanceof Clip) {
+					// Never call Clip methods while holding the clip's monitor: Java Sound
+					// takes the mixer lock first and then the line's own monitor
+					// (AbstractDataLine.stop() -> setActive()/setStarted() in JDK 8).
+					// The clip's playback thread does exactly that when it reaches the end
+					// of the data, so synchronized(clip) { clip.start()/stop() } racing with
+					// a natural end of playback deadlocked, leaving the mixer locked forever
+					// and hanging the next Player call from the event thread.
 					Clip clip = (Clip) sequence;
-					synchronized (clip) {
-						clip.start();
-					}
+					this.complete = false;
+					clip.start();
 					if (b) {
 						notifyListeners(PlayerListener.STARTED, getMediaTime(), false);
 						b = false;
 					}
 					synchronized (playLock) {
-						playLock.wait();
+						// Guarded wait: the STOP event or stop() may already have arrived
+						// before this point, a bare wait() would then block forever and the
+						// player would stay STARTED for good.
+						while (!stop && !this.complete && playerThread == Thread.currentThread()) {
+							playLock.wait();
+						}
 					}
-					complete = this.complete;
-					synchronized (clip) {
-						clip.stop();
-					}
+					complete = this.complete && !stop;
+					clip.stop();
 				} else if (sequence instanceof emulator.javazoom.jl.player.Player) {
 					if (b) {
 						notifyListeners(PlayerListener.STARTED, getMediaTime(), false);
@@ -893,13 +902,17 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 					} catch (MediaException ignored) {}
 				}
 			}
-			state = PREFETCHED;
+			// a stop() + start() may already have launched a new playback thread
+			Thread current = playerThread;
+			if (current == null || current == Thread.currentThread())
+				state = PREFETCHED;
 			notifyListeners(complete ? PlayerListener.END_OF_MEDIA : PlayerListener.STOPPED, getMediaTime(), false);
 		} catch (Exception e) {
 			System.err.println("Exception in player thread!");
 			e.printStackTrace();
 		} finally {
-			playerThread = null;
+			if (playerThread == Thread.currentThread())
+				playerThread = null;
 			if (!Settings.enableMediaDump) players.remove(this);
 		}
 	}
@@ -917,9 +930,7 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 		level = n;
 		if (sequence == null) return;
 		if (sequence instanceof Clip) {
-			synchronized (sequence) {
-				setVolume((Clip) sequence, n);
-			}
+			setVolume((Clip) sequence, n);
 			return;
 		}
 		if (sequence instanceof Sequence) {
