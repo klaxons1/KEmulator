@@ -457,9 +457,19 @@ public class PlayerImpl implements Player, Runnable, LineListener, MetaEventList
 			ms = ((Clip) sequence).getMicrosecondLength();
 			if (t < ms) ms = t;
 			if (ms < 0) ms = 0;
-			synchronized (sequence) {
-				((Clip) sequence).setMicrosecondPosition(mediaTime = t);
-			}
+			// Don't use Clip.setMicrosecondPosition() and don't hold the clip's monitor
+			// here: in JDK 8 DirectClip.setMicrosecondPosition() is synchronized on the
+			// clip and calls flush(), which needs the line's internal lock. The clip's
+			// own playback thread, stopping at the end of the data, takes that internal
+			// lock first and then the clip's monitor (implStop() -> setActive()), so
+			// seeking a clip that is just finishing deadlocked both threads and froze
+			// the game (issue #352). setFramePosition() is not synchronized.
+			Clip clip = (Clip) sequence;
+			mediaTime = ms;
+			float frameRate = clip.getFormat().getFrameRate();
+			long frames = frameRate > 0 ? (long) (ms * (double) frameRate / 1000000D) : 0;
+			if (frames > Integer.MAX_VALUE) frames = Integer.MAX_VALUE;
+			clip.setFramePosition((int) frames);
 		} else if (sequence instanceof Sequence) {
 			ms = ((Sequence) sequence).getMicrosecondLength();
 			if (t < ms) ms = t;
