@@ -15,27 +15,27 @@ import javax.microedition.lcdui.Image;
 import javax.microedition.lcdui.game.Sprite;
 import java.awt.geom.AffineTransform;
 
-final class a
+final class DirectGraphicsImpl
 		implements DirectGraphics {
 	Graphics gc;
 	IGraphics2D impl;
-	static final int[][] jdField_a_of_type_Array2dOfInt = {{0, 24756}, {16384, 8372}, {8192, 16564}, {180, 24576}, {16474, 8462}, {270, 24666}, {90, 24846}, {8282, 16654}};
+	static final int[][] NOKIA_TO_MIDP_TRANSFORMS = {{0, 24756}, {16384, 8372}, {8192, 16564}, {180, 24576}, {16474, 8462}, {270, 24666}, {90, 24846}, {8282, 16654}};
 	private int[] tempPixels;
 
-	public a(Graphics paramGraphics) {
-		this.gc = paramGraphics;
-		this.impl = paramGraphics.getImpl();
+	public DirectGraphicsImpl(Graphics graphics) {
+		this.gc = graphics;
+		this.impl = graphics.getImpl();
 	}
 
-	private static int a(int paramInt) {
-		for (int i = 0; i < jdField_a_of_type_Array2dOfInt.length; i++) {
-			for (int j = 0; j < jdField_a_of_type_Array2dOfInt[i].length; j++) {
-				if (jdField_a_of_type_Array2dOfInt[i][j] == paramInt) {
+	private static int toMidpTransform(int manipulation) {
+		for (int i = 0; i < NOKIA_TO_MIDP_TRANSFORMS.length; i++) {
+			for (int j = 0; j < NOKIA_TO_MIDP_TRANSFORMS[i].length; j++) {
+				if (NOKIA_TO_MIDP_TRANSFORMS[i][j] == manipulation) {
 					return i;
 				}
 			}
 		}
-		Emulator.getEmulator().getLogStream().println("*** nokiaManip2MIDP2Manip: Invalid Nokia Manipulation: " + paramInt);
+		Emulator.getEmulator().getLogStream().println("*** nokiaManip2MIDP2Manip: Invalid Nokia Manipulation: " + manipulation);
 		return 0;
 	}
 
@@ -43,7 +43,7 @@ final class a
 		IImage localIImage;
 		int i = (localIImage = paramImage._getImpl()).getWidth();
 		int j = localIImage.getHeight();
-		int k = a(paramInt4);
+		int k = toMidpTransform(paramInt4);
 		this.gc.drawRegion(paramImage, 0, 0, i, j, k, paramInt1, paramInt2, paramInt3);
 		Profiler.nokiaDrawImageCallCount += 1;
 		Profiler.nokiaDrawImagePixelCount += i * j;
@@ -53,7 +53,7 @@ final class a
 
 	public final void drawPixels(short[] paramArrayOfShort, boolean paramBoolean, int paramInt1, int paramInt2, int paramInt3, int paramInt4, int paramInt5, int paramInt6, int paramInt7, int paramInt8) {
 		IImage localIImage = GraphicsUtils.setImageData(paramArrayOfShort, paramBoolean, paramInt1, paramInt2, paramInt5, paramInt6);
-		ITransform localITransform = this.impl.getTransform().newTransform(paramInt5, paramInt6, a(paramInt7), paramInt3, paramInt4, 0);
+		ITransform localITransform = this.impl.getTransform().newTransform(paramInt5, paramInt6, toMidpTransform(paramInt7), paramInt3, paramInt4, 0);
 		this.gc.drawRegion(localIImage, 0, 0, paramInt5, paramInt6, localITransform, 65280);
 		Profiler.nokiaDrawPixelCallCount += 1;
 		Profiler.nokiaDrawPixelPixelCount += paramInt5 * paramInt6;
@@ -115,7 +115,7 @@ final class a
 
 	public final void drawPixels(int[] paramArrayOfInt, boolean paramBoolean, int paramInt1, int paramInt2, int paramInt3, int paramInt4, int paramInt5, int paramInt6, int paramInt7, int paramInt8) {
 		IImage localIImage = GraphicsUtils.setImageData(paramArrayOfInt, paramBoolean, paramInt1, paramInt2, paramInt5, paramInt6);
-		ITransform localITransform = this.impl.getTransform().newTransform(paramInt5, paramInt6, a(paramInt7), paramInt3, paramInt4, 0);
+		ITransform localITransform = this.impl.getTransform().newTransform(paramInt5, paramInt6, toMidpTransform(paramInt7), paramInt3, paramInt4, 0);
 		this.gc.drawRegion(localIImage, 0, 0, paramInt5, paramInt6, localITransform, 65280);
 		Profiler.nokiaDrawPixelCallCount += 1;
 		Profiler.nokiaDrawPixelPixelCount += paramInt5 * paramInt6;
