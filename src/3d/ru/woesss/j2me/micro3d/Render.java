@@ -97,6 +97,13 @@ public class Render {
 		g3d.start();
 	}
 
+	public synchronized void bindForJBlendBatch(Graphics graphics) {
+		if (stack.isEmpty()) {
+			// LCDUI can reset the same Graphics instance to a different backing image.
+			bind(graphics, false);
+		}
+	}
+
 	public synchronized void bind(Graphics graphics, boolean doClip) {
 		Profiler3D.MC3D_bindGraphicsCallCount++;
 
@@ -130,8 +137,7 @@ public class Render {
 			if (doClip) {
 				clip.setBounds(graphics.getClipX() + graphics.getTranslateX(), graphics.getClipY() + graphics.getTranslateY(), graphics.getClipWidth(), graphics.getClipHeight());
 			} else {
-				clip.width = width;
-				clip.height = height;
+				clip.setBounds(0, 0, width, height);
 			}
 			int l = clip.x;
 			int t = clip.y;
@@ -144,6 +150,7 @@ public class Render {
 				glEnable(GL_SCISSOR_TEST);
 				glScissor(l, t, w, h);
 			}
+			glDepthMask(true);
 			glClear(GL_DEPTH_BUFFER_BIT);
 
 			boolean aa = AppSettings.m3gAA == AppSettings.AA_ON;
@@ -301,6 +308,7 @@ public class Render {
 			glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		}
+		glDisable(GL_CULL_FACE);
 		glDisable(GL_DEPTH_TEST);
 		glDepthMask(false);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

@@ -376,13 +376,18 @@ public final class Emulator3D implements IGraphics3D {
 					}
 				} else {
 					Graphics target = (Graphics) this.target;
+					buffer.rewind();
+					GL11.glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+					int error = GL11.glGetError();
+					if (error != GL_NO_ERROR) {
+						// The buffer still holds old pixels if readback failed.
+						System.err.println("3D framebuffer readback: glError " + error);
+						return;
+					}
 					int tx = target.getTranslateX();
 					int ty = target.getTranslateY();
 					target.translate(-tx, -ty);
 					if (Settings.g2d == 0) {
-						buffer.rewind();
-						GL11.glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
-
 						for (int yy = 0; yy < height; yy++) {
 							int yWrite = swtBufferImage.height - 1 - yy;
 							int writePos = yWrite * swtBufferImage.width * 4;

@@ -94,7 +94,10 @@ public class RenderProxy {
 	}
 
 	public static void flush(Graphics g) {
-		getRender(g).flushToBuffer();
+		Render render = renders.get(g);
+		if (render != null) {
+			render.flushToBuffer();
+		}
 	}
 
 	public static void renderFigure(Graphics g, Figure figure, int x, int y,
@@ -141,9 +144,9 @@ public class RenderProxy {
 		Render render = renders.get(g);
 		if (render == null) {
 			render = new Render();
-			render.bind(g, false);
 			renders.put(g, render);
 		}
+		render.bindForJBlendBatch(g);
 		return render;
 	}
 
