@@ -150,7 +150,7 @@ Static analysis cannot prove which single GL command first sets `1282` on the us
 
 ## 5. Practical fixes / diagnostics
 
-The diagnosis itself did not change rendering behavior. A later, separate change added the opt-in instrumentation described in section 7; it does not implement the rendering fixes below. In priority order:
+This section is the original plan. The diagnosis and the opt-in instrumentation in section 7 did not change rendering behavior; **the rendering fixes are now implemented in section 10**. In priority order:
 
 1. **Make GL error reporting accurate.** In `Render.checkGlError`, drain errors in a loop and report every flag; call `glGetError()` before `copy2d(true)` to discard/report stale state. Add a `checkGlError("TextureImpl.loadToGL")` immediately after `TextureImpl.loadToGL()`'s `glTexImage2D`. This will tell whether the `1282` originates in game texture uploads, the backbuffer upload, or an earlier GL call.
 2. **Normalize pixel-store state before `copy2d`'s upload.** Move `glPixelStorei(GL_UNPACK_ALIGNMENT, 1)` back **before** `GL11.glTexImage2D`; explicitly reset `GL_UNPACK_ROW_LENGTH`, `GL_UNPACK_SKIP_ROWS`, `GL_UNPACK_SKIP_PIXELS`; unbind/check `GL_PIXEL_UNPACK_BUFFER_BINDING`; and verify `GL_MAX_TEXTURE_SIZE`/NPOT capability. Keep the active texture unit consistent with the sampler (`Program.Simple` uses unit 1).
@@ -253,3 +253,42 @@ This rules out NPOT, PBO, and leaked pixel-store state on this GPU/driver. It al
 The repeated `copy2d: enter` / `copy2d.texImage2D` lines after frame 60 were **trace noise**, not repeated failures. They come from `flushToBuffer()` — the JBlend `Graphics.flush()` entry point — refreshing the 2D backbuffer on later frames while `backCopied` remains true. The frame/state lines were already throttled to the first 30 frames and every 60th frame, but bind, `copy2d`, and upload-completion traces were still printed on every frame. Those high-frequency traces now use the same `frameTrace` schedule; upload parameters are still recorded in `lastTextureUpload` for error dumps. No rendering behavior was changed.
 
 With the throttling applied, a frame such as 61–67 no longer emits three `copy2d` lines; only the first 30 frames and every 60th frame produce the verbose upload trace. Error reporting and shutdown suppression remain unconditional. A non-force-closed reproduction that actually shows the missing background is still needed to attribute the original `1282` on the affected setup.
+
+---
+
+## 10. Rendering fix for the missing background
+
+This is the actual behavior change, not more logging. The goal is to ensure that `clearBG`'s colored far-plane quad is still rendered even when the 2D backbuffer-to-texture copy fails, and to remove the `ShowLogFrame=true` UI reentrancy that upstream issue #301 identified as a reproduction trigger.
+
+### 10.1 GL uploads no longer poison or abort the frame
+
+`GLDebug.prepareTextureUpload()` now runs on the GL thread immediately before both MC3D texture uploads:
+
+- `Render.copy2d()` — the 2D backbuffer texture;
+- `TextureImpl.loadToGL()` — game BMP textures.
+
+It resets `GL_UNPACK_SWAP_BYTES`, `GL_UNPACK_LSB_FIRST`, `GL_UNPACK_ROW_LENGTH`, `GL_UNPACK_SKIP_ROWS`, `GL_UNPACK_SKIP_PIXELS`, and `GL_UNPACK_ALIGNMENT`; on GL 1.2+ it also resets `GL_UNPACK_IMAGE_HEIGHT`/`GL_UNPACK_SKIP_IMAGES`; on GL 1.5+ it unbinds `GL_PIXEL_UNPACK_BUFFER`. Any errors caused by the normalization itself are drained. This restores the alignment reset that `de47d2ee` had placed before `glTexImage2D` and later `40727e69` moved after it.
+
+`GLDebug.checkStale()`, `GLDebug.checkNoThrow()`, and `Render.checkGlError()` now **drain and report errors without throwing**. Previously a sticky `GL_INVALID_OPERATION` from an earlier texture upload was observed in `copy2d(true)` and thrown as `RuntimeException("texImage2D: glError 1282")`, aborting `flushToBuffer()` before the queued background quad and `swapBuffers()`. Stale errors are now cleared before the current operation; live errors are reported with their correct operation label, but the frame continues.
+
+### 10.2 `copy2d(true)` has a clear-color fallback
+
+If `glTexImage2D` for the 2D backbuffer still fails, `copy2d()`:
+
+1. logs the condition once with `GLDebug.reportOnce()`;
+2. unbinds the failed backbuffer texture from unit 1;
+3. clears the GL color and depth buffers to the game's `clearColor`;
+4. clears the MIDP 2D backing buffer (respecting `mascotNo2DMixing`);
+5. marks `backCopied = true` and returns **without throwing**.
+
+`flushToBuffer()` then renders the queued 3D stack, including `clearBG`'s colored quad, and performs the normal readback/swap. On a later `copy2d(false)` failure it simply skips the stale 2D composite rather than erasing the finished 3D frame. After a successful `Program.Simple` draw, unit 0 is unbound so the backbuffer texture cannot be sampled where game textures belong; unit 1 remains the Simple program's sampler (`sampler0 = 1`).
+
+### 10.3 No nested SWT event loop for the log window
+
+`Log.createWindow()` used to run its own `while (!logShell.isDisposed()) readAndDispatch()` loop. With `ShowLogFrame=true`, that nested loop became the emulator's UI loop and could reenter paint/resize events while the M3G thread was binding its GL target. It now opens the log shell and returns; `EmulatorScreen.start()` owns the single SWT event loop. A dispose listener clears `logOpen`/`attachedToParent`, and the menu's `dispose()` still closes the window. This removes the config-dependent reproduction path from upstream #301 without requiring users to delete `property.txt`.
+
+### 10.4 Validation and limits
+
+The full desktop source set was compiled with JDK 8 / LWJGL / SWT classpath: **compile check passed** (exit 0, 9 pre-existing warnings). A no-GL reflection smoke test confirmed `checkStale()` does not throw, `checkNoThrow()` returns `GL_NO_ERROR`, `prepareTextureUpload()` returns `false` on a missing context, and `reportOnce()` emits one line. `git diff --check` passed.
+
+These changes address the proven failure path: a failed 2D copy or stale GL error can no longer cancel the colored background quad, and the log-window reentrancy is gone. They are not a claim that the exact first GL command which sets `1282` on every affected GPU has been identified. No GL/X emulator run or freej2me-plus verification was performed; a real reproduction on the affected GPU with `MascotGLDebug=true` is still needed to confirm the visual result. Ask before running freej2me-plus.

@@ -112,24 +112,26 @@ public final class Log implements ILogStream, ControlListener, DisposeListener, 
 	}
 
 	public final void createWindow(final Shell parent) {
+		if (this.logOpen && this.logShell != null && !this.logShell.isDisposed()) {
+			this.logShell.setFocus();
+			return;
+		}
 		this.initWindows();
 		this.loadLogFile();
-		final Display current = Display.getCurrent();
 		this.parentShell = parent;
 		this.logShell.setLocation(parent.getLocation().x + parent.getSize().x, parent.getLocation().y);
 		this.logShell.setSize(parent.getSize());
 		this.logOpen = true;
 		this.attachedToParent = true;
-		this.logShell.open();
 		this.logShell.addControlListener(this);
 		this.logShell.addDisposeListener(this);
+		this.logShell.open();
 		parent.setFocus();
-		while (!this.logShell.isDisposed()) {
-			if (!current.readAndDispatch()) {
-				current.sleep();
-			}
-		}
-		this.logOpen = false;
+		// EmulatorScreen.start() already owns the SWT event loop. A nested
+		// readAndDispatch loop here reenters paint/resize events while the M3G
+		// thread is binding its GL target; with ShowLogFrame=true that can
+		// break MC3D 2D/3D compositing and hide the background. Let the main
+		// loop dispatch events for both shells instead.
 	}
 
 	public final void dispose() {
@@ -137,6 +139,7 @@ public final class Log implements ILogStream, ControlListener, DisposeListener, 
 			this.logShell.dispose();
 		}
 		this.logOpen = false;
+		this.attachedToParent = false;
 	}
 
 	private void initWindows() {
@@ -157,7 +160,7 @@ public final class Log implements ILogStream, ControlListener, DisposeListener, 
 	}
 
 	public final void controlMoved(final ControlEvent controlEvent) {
-		if (parentShell.isDisposed()) return;
+		if (parentShell == null || parentShell.isDisposed() || logShell == null || logShell.isDisposed()) return;
 		if (Math.abs(this.parentShell.getLocation().x + this.parentShell.getSize().x - this.logShell.getLocation().x) < 10 && Math.abs(this.parentShell.getLocation().y - this.logShell.getLocation().y) < 20) {
 			this.logShell.setLocation(this.parentShell.getLocation().x + this.parentShell.getSize().x, this.parentShell.getLocation().y);
 			attachedToParent = true;
@@ -170,7 +173,8 @@ public final class Log implements ILogStream, ControlListener, DisposeListener, 
 	}
 
 	public final void widgetDisposed(final DisposeEvent disposeEvent) {
-		this.dispose();
+		this.logOpen = false;
+		this.attachedToParent = false;
 	}
 
 	public void run() {

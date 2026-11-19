@@ -159,6 +159,9 @@ public final class TextureImpl {
 			return;
 		}
 		GLDebug.checkStale("TextureImpl.loadToGL");
+		if (!GLDebug.prepareTextureUpload("TextureImpl.loadToGL.pixelStore")) {
+			return;
+		}
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, mTexId);
 
@@ -177,7 +180,7 @@ public final class TextureImpl {
 		} finally {
 			glBindTexture(GL_TEXTURE_2D, 0);
 		}
-		Render.checkGlError("TextureImpl.loadToGL.glTexImage2D");
+		GLDebug.checkNoThrow("TextureImpl.loadToGL.glTexImage2D");
 		GLDebug.traceFrame("TextureImpl.loadToGL: uploaded id=" + mTexId
 				+ ", size=" + image.width + "x" + image.height
 				+ ", filter=" + filter);

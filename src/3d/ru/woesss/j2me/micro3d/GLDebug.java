@@ -20,13 +20,18 @@ import emulator.AppSettings;
 import emulator.graphics3D.lwjgl.Emulator3D;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL21;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GLCapabilities;
 
 import java.nio.Buffer;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Structured GL diagnostics for the MascotCapsule/LWJGL renderer.
@@ -35,8 +40,9 @@ import java.nio.Buffer;
  * flag per call. A single unchecked error from an earlier texture upload can
  * therefore be mislabeled by a later {@code checkGlError("texImage2D")}.
  * The helpers here drain all pending errors, name them, and dump the GL state
- * that matters for texture uploads. Verbose per-frame traces are opt-in via
- * {@link AppSettings#mascotGlDebug}.
+ * that matters for texture uploads. Diagnostics never throw, so the renderer
+ * can continue with a clear-color fallback after a failed upload. Verbose
+ * per-frame traces are opt-in via {@link AppSettings#mascotGlDebug}.
  */
 final class GLDebug {
 	private static final String PREFIX = "[MC3D-GL] ";
@@ -46,6 +52,8 @@ final class GLDebug {
 	private static volatile String lastTextureUpload = "none";
 	private static volatile boolean suppressionReported;
 	private static volatile long currentFrameId;
+	private static final Set<String> ONCE_LOGGED =
+			Collections.synchronizedSet(new HashSet<String>());
 
 	private GLDebug() {
 	}
@@ -73,6 +81,13 @@ final class GLDebug {
 
 	static void log(String message) {
 		System.err.println(PREFIX + message);
+	}
+
+	/** Report a recurring recovery condition once instead of flooding every frame. */
+	static void reportOnce(String key, String message) {
+		if (ONCE_LOGGED.add(key)) {
+			log(message);
+		}
 	}
 
 	/**
@@ -115,23 +130,60 @@ final class GLDebug {
 		}
 	}
 
-	/** Drain all pending GL errors. Throw on the first one while the context is alive. */
-	static void check(String operation) {
-		if (skipShutdownOrContextLoss(operation)) {
-			return;
-		}
-		drain(operation, true);
-	}
-
 	/**
-	 * Fail on errors that were already pending before an operation, instead of
+	 * Drain errors that were already pending before an operation, instead of
 	 * letting a later check mislabel them as coming from that operation.
+	 * Stale errors must not abort the current frame: doing so is what hides the
+	 * queued background quad when an earlier texture upload failed.
 	 */
 	static void checkStale(String operation) {
 		if (skipShutdownOrContextLoss(operation)) {
 			return;
 		}
-		drain(operation + " [stale before operation]", true);
+		drain(operation + " [stale before operation]");
+	}
+
+	/** Drain and report GL errors without aborting the frame. */
+	static int checkNoThrow(String operation) {
+		if (skipShutdownOrContextLoss(operation)) {
+			return GL11.GL_NO_ERROR;
+		}
+		return drain(operation);
+	}
+
+	/**
+	 * Normalize pixel-store state before glTexImage2D. Leaked row/skip values,
+	 * alignment, or a bound pixel-unpack buffer can make an otherwise legal
+	 * upload fail with GL_INVALID_OPERATION. Call this on the GL thread.
+	 */
+	static boolean prepareTextureUpload(String operation) {
+		if (skipShutdownOrContextLoss(operation)) {
+			return false;
+		}
+		try {
+			GL11.glPixelStorei(GL11.GL_UNPACK_SWAP_BYTES, 0);
+			GL11.glPixelStorei(GL11.GL_UNPACK_LSB_FIRST, 0);
+			GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+			GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
+			GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
+			GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+			GLCapabilities caps = capabilities();
+			if (caps != null) {
+				if (caps.OpenGL12) {
+					GL11.glPixelStorei(GL12.GL_UNPACK_IMAGE_HEIGHT, 0);
+					GL11.glPixelStorei(GL12.GL_UNPACK_SKIP_IMAGES, 0);
+				}
+				if (caps.OpenGL15) {
+					GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
+				}
+			}
+		} catch (Throwable t) {
+			reportOnce("pixelStore." + operation,
+					operation + ": pixel-store normalization failed: " + t);
+		} finally {
+			clearErrors();
+		}
+		return true;
 	}
 
 	/** Log detailed, opt-in per-frame traces without flooding at every FPS tick. */
@@ -163,7 +215,7 @@ final class GLDebug {
 		}
 	}
 
-	private static int drain(String operation, boolean fail) {
+	private static int drain(String operation) {
 		int first = GL11.GL_NO_ERROR;
 		int count = 0;
 		int previous = -1;
@@ -204,9 +256,6 @@ final class GLDebug {
 			}
 			// Clear errors raised by the state/context queries above, too.
 			clearErrors();
-			if (fail && !contextLost && !isShuttingDown()) {
-				throw new RuntimeException(operation + ": glError " + first + " (" + errorName(first) + ")");
-			}
 		}
 		return first;
 	}

@@ -77,12 +77,37 @@ public class Render {
 	/**
 	 * Utility method for debugging OpenGL calls.
 	 * <p>
-	 * If the operation is not successful, the check throws an error.
+	 * Errors are drained and reported, but they must not throw here: a single
+	 * failed 2D/3D compositing call used to abort flushToBuffer before the
+	 * queued background quad and readback were rendered.
 	 *
 	 * @param glOperation - Name of the OpenGL call to check.
 	 */
 	static void checkGlError(String glOperation) {
-		GLDebug.check(glOperation);
+		GLDebug.checkNoThrow(glOperation);
+	}
+
+	/** Clear the 2D MIDP backing buffer after its contents have been copied. */
+	private void clear2DTarget() {
+		if (AppSettings.mascotNo2DMixing) {
+			return;
+		}
+		int prevColor = targetGraphics.getColor();
+		targetGraphics.setColor(0);
+		targetGraphics.fillRect(gClip.x, gClip.y, gClip.width, gClip.height);
+		targetGraphics.setColor(prevColor);
+	}
+
+	/** Fall back to the game's clear color when the 2D backbuffer cannot be sampled. */
+	private void clearToBackgroundColor() {
+		glColorMask(true, true, true, true);
+		glDepthMask(true);
+		glDisable(GL_BLEND);
+		glDisable(GL_DEPTH_TEST);
+		glClearColor(((clearColor >> 16) & 0xff) / 255f,
+				((clearColor >> 8) & 0xff) / 255f,
+				(clearColor & 0xff) / 255f, 1f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	}
 
 	private String targetInfo() {
@@ -149,7 +174,7 @@ public class Render {
 		if (!GLDebug.verbose() || glContextLogged) {
 			return;
 		}
-		GLDebug.check(operation + ".context");
+		GLDebug.checkNoThrow(operation + ".context");
 		GLDebug.logContext(operation);
 		glContextLogged = true;
 	}
@@ -326,6 +351,9 @@ public class Render {
 			return;
 		}
 		GLDebug.checkStale("copy2d");
+		if (!GLDebug.prepareTextureUpload("copy2d.pixelStore")) {
+			return;
+		}
 		GLDebug.traceFrame("copy2d: enter preProcess=" + preProcess
 				+ ", backCopied=" + backCopied
 				+ ", target=" + targetInfo()
@@ -358,7 +386,21 @@ public class Render {
 				texFormat, GL_UNSIGNED_BYTE,
 				pixels
 		);
-		checkGlError("texImage2D");
+		if (GLDebug.checkNoThrow("copy2d.texImage2D") != GL11.GL_NO_ERROR) {
+			GLDebug.reportOnce("copy2d.texImage2DFailed",
+					"copy2d: background texture upload failed; using clear-color fallback"
+							+ " and continuing with the queued 3D background");
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, 0);
+			glActiveTexture(GL_TEXTURE0);
+			if (!preProcess) {
+				return;
+			}
+			clearToBackgroundColor();
+			clear2DTarget();
+			backCopied = true;
+			return;
+		}
 		GLDebug.traceFrame("copy2d: texImage2D completed, format="
 				+ (texFormat == GL_RGBA ? "GL_RGBA" : "GL_RGB")
 				+ ", size=" + targetImage.getWidth() + "x" + targetImage.getHeight());
@@ -393,16 +435,15 @@ public class Render {
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glDisableVertexAttribArray(program.aPosition);
 		glDisableVertexAttribArray(program.aTexture);
-		checkGlError("copy2d");
+		GLDebug.checkNoThrow("copy2d.draw");
+		// The Simple program samples unit 1. Do not leave the backbuffer texture
+		// bound on unit 0, where game textures are sampled.
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 		if (!preProcess) {
 			return;
 		}
-		if (!AppSettings.mascotNo2DMixing) {
-			int prevColor = targetGraphics.getColor();
-			targetGraphics.setColor(0);
-			targetGraphics.fillRect(gClip.x, gClip.y, gClip.width, gClip.height);
-			targetGraphics.setColor(prevColor);
-		}
+		clear2DTarget();
 		backCopied = true;
 	}
 
