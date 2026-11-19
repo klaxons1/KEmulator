@@ -118,6 +118,9 @@ public final class TextureImpl {
 	}
 
 	int getId() {
+		if (GLDebug.isShuttingDown()) {
+			return mTexId;
+		}
 		if (!glIsTexture(mTexId)) {
 			generateId();
 		} else if (!isMutable) {
@@ -136,6 +139,9 @@ public final class TextureImpl {
 	}
 
 	private void generateId() {
+		if (GLDebug.isShuttingDown()) {
+			return;
+		}
 		final IntBuffer textureIds = BufferUtils.createIntBuffer(1);
 		synchronized (TextureImpl.class) {
 			while (textureIds.get(0) <= sLastId) {
@@ -149,6 +155,9 @@ public final class TextureImpl {
 	}
 
 	private void loadToGL() {
+		if (GLDebug.skipShutdownOrContextLoss("TextureImpl.loadToGL")) {
+			return;
+		}
 		GLDebug.checkStale("TextureImpl.loadToGL");
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, mTexId);

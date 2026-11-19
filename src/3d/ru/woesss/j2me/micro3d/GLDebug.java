@@ -17,6 +17,7 @@
 package ru.woesss.j2me.micro3d;
 
 import emulator.AppSettings;
+import emulator.graphics3D.lwjgl.Emulator3D;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
@@ -40,8 +41,10 @@ import java.nio.Buffer;
 final class GLDebug {
 	private static final String PREFIX = "[MC3D-GL] ";
 	private static final int MAX_DRAINED_ERRORS = 32;
+	private static final int MAX_IDENTICAL_ERRORS = 3;
 	private static volatile String lastFrame = "none";
 	private static volatile String lastTextureUpload = "none";
+	private static volatile boolean suppressionReported;
 
 	private GLDebug() {
 	}
@@ -60,8 +63,51 @@ final class GLDebug {
 		System.err.println(PREFIX + message);
 	}
 
-	/** Drain all pending GL errors. Throw on the first one, as the old check did. */
+	/**
+	 * Force-closing the emulator destroys the GL context while the M3G thread
+	 * can still have a queued frame. In that state glGetError() may repeatedly
+	 * return GL_INVALID_OPERATION and glGetString()/glGetInteger() return
+	 * null/zero. Report that condition once, clear the pending flags, and let
+	 * callers skip GL work instead of throwing or flooding the log.
+	 */
+	static boolean isShuttingDown() {
+		return Emulator3D.isExiting();
+	}
+
+	static boolean skipShutdownOrContextLoss(String operation) {
+		boolean exiting = isShuttingDown();
+		boolean contextLost = !exiting && contextUnavailable();
+		if (!exiting && !contextLost) {
+			suppressionReported = false;
+			return false;
+		}
+		if (!suppressionReported) {
+			suppressionReported = true;
+			String reason = exiting ? "emulator is shutting down" : "GL context is no longer current";
+			log(operation + ": " + reason
+					+ "; suppressing shutdown/context-loss GL errors and skipping GL work");
+		}
+		clearErrors();
+		return true;
+	}
+
+	private static boolean contextUnavailable() {
+		try {
+			String version = GL11.glGetString(GL11.GL_VERSION);
+			if (version == null || version.isEmpty()) {
+				return true;
+			}
+			return GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) <= 0;
+		} catch (Throwable t) {
+			return true;
+		}
+	}
+
+	/** Drain all pending GL errors. Throw on the first one while the context is alive. */
 	static void check(String operation) {
+		if (skipShutdownOrContextLoss(operation)) {
+			return;
+		}
 		drain(operation, true);
 	}
 
@@ -70,6 +116,9 @@ final class GLDebug {
 	 * letting a later check mislabel them as coming from that operation.
 	 */
 	static void checkStale(String operation) {
+		if (skipShutdownOrContextLoss(operation)) {
+			return;
+		}
 		drain(operation + " [stale before operation]", true);
 	}
 
@@ -103,41 +152,77 @@ final class GLDebug {
 	private static int drain(String operation, boolean fail) {
 		int first = GL11.GL_NO_ERROR;
 		int count = 0;
+		int previous = -1;
+		int identical = 0;
+		boolean stopped = false;
 		int error;
 		while (count < MAX_DRAINED_ERRORS && (error = GL11.glGetError()) != GL11.GL_NO_ERROR) {
 			if (first == GL11.GL_NO_ERROR) {
 				first = error;
 			}
 			count++;
+			if (error == previous) {
+				identical++;
+			} else {
+				previous = error;
+				identical = 1;
+			}
 			log(operation + ": glError " + error + " (" + errorName(error) + ")");
+			// A destroyed/no-longer-current context can return the same error
+			// forever. Three identical lines are enough to identify that case.
+			if (identical >= MAX_IDENTICAL_ERRORS) {
+				log(operation + ": stopped draining after " + count
+						+ " errors (repeated " + errorName(error) + ")");
+				stopped = true;
+				break;
+			}
 		}
-		if (count == MAX_DRAINED_ERRORS) {
+		if (!stopped && count == MAX_DRAINED_ERRORS) {
 			log(operation + ": stopped draining after " + count + " errors");
 		}
 		if (first != GL11.GL_NO_ERROR) {
 			log(operation + ": " + count + " GL error(s) drained; first=" + errorName(first));
-			dumpState(operation);
-		}
-		if (fail && first != GL11.GL_NO_ERROR) {
-			throw new RuntimeException(operation + ": glError " + first + " (" + errorName(first) + ")");
+			boolean contextLost = contextUnavailable();
+			if (contextLost) {
+				log(operation + ": GL state unavailable (context lost or no current context)");
+			} else {
+				dumpState(operation);
+			}
+			// Clear errors raised by the state/context queries above, too.
+			clearErrors();
+			if (fail && !contextLost && !isShuttingDown()) {
+				throw new RuntimeException(operation + ": glError " + first + " (" + errorName(first) + ")");
+			}
 		}
 		return first;
 	}
 
 	private static void clearErrors() {
 		try {
+			int previous = -1;
+			int identical = 0;
 			for (int i = 0; i < MAX_DRAINED_ERRORS; i++) {
-				if (GL11.glGetError() == GL11.GL_NO_ERROR) {
+				int error = GL11.glGetError();
+				if (error == GL11.GL_NO_ERROR) {
 					break;
+				}
+				if (error == previous && ++identical >= MAX_IDENTICAL_ERRORS) {
+					break;
+				}
+				if (error != previous) {
+					previous = error;
+					identical = 1;
 				}
 			}
 		} catch (Throwable t) {
-			log("glGetError cleanup failed: " + t);
+			// A missing native/context during shutdown is expected; keep it out
+			// of the default error stream. Verbose mode can still show it.
+			trace("glGetError cleanup failed: " + t);
 		}
 	}
 
 	static void logContext(String operation) {
-		if (!verbose()) {
+		if (!verbose() || skipShutdownOrContextLoss(operation)) {
 			return;
 		}
 		try {
@@ -161,6 +246,12 @@ final class GLDebug {
 
 	static void dumpState(String operation) {
 		try {
+			if (contextUnavailable()) {
+				log(operation + ": GL state unavailable (context lost or no current context)"
+						+ ", lastFrame=" + lastFrame
+						+ ", lastTextureUpload=" + lastTextureUpload);
+				return;
+			}
 			GLCapabilities caps = capabilities();
 			StringBuilder sb = new StringBuilder(256);
 			sb.append(operation).append(": GL state");
@@ -228,6 +319,9 @@ final class GLDebug {
 	}
 
 	private static String shortState() {
+		if (contextUnavailable()) {
+			return "contextLost=true";
+		}
 		GLCapabilities caps = capabilities();
 		StringBuilder sb = new StringBuilder(128);
 		sb.append("activeUnit=").append(activeTextureUnit());

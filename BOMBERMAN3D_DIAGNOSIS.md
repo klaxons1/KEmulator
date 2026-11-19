@@ -171,7 +171,7 @@ The diagnosis itself did not change rendering behavior. A later, separate change
 
 ## 7. Debug instrumentation added
 
-A later request, “make more good debug output”, added opt-in MC3D GL diagnostics. This is **instrumentation**, not a rendering fix: it does not normalize pixel-store state, skip the 2D/3D composite, or change the background workaround. When GL errors occur, checks can now fail earlier with an accurate label, and diagnostic state queries clear their own error flags; normal rendering paths are unchanged when no GL errors occur.
+A later request, “make more good debug output”, added opt-in MC3D GL diagnostics. This is **instrumentation**, not a rendering fix: it does not normalize pixel-store state, skip the 2D/3D composite, or change the background workaround. When GL errors occur on a live context, checks can now fail earlier with an accurate label, and diagnostic state queries clear their own error flags; normal rendering paths are unchanged when no GL errors occur. A shutdown/context-loss guard (section 8) prevents force-close teardown from being reported as a game bug.
 
 ### Enable it
 
@@ -189,6 +189,8 @@ Error diagnostics are always improved; the setting controls the extra per-frame/
 - Every `glTexImage2D` upload logs its label, target, level, internal format, width/height, border, format, type, texture ID, and buffer position/remaining/capacity. In verbose mode it also logs the pre-upload GL state.
 - Frame traces include frame number, stack size, target type/size, clip, `backCopied`, render step, and completion/abort. Failures also print the exception stack trace and the GL state snapshot. Verbose traces print the first 30 frames and every 60th frame afterward to avoid flooding at 30+ FPS.
 - Diagnostic state queries clear their own GL errors so the instrumentation itself cannot create the next frame’s mystery `1282`.
+- `Emulator3D.isExiting()` plus a null-version/zero-`GL_MAX_TEXTURE_SIZE` check detects emulator shutdown or a lost GL context. Frame entry, `copy2d`, texture upload, bind, render, and clip paths then skip GL work instead of throwing. The condition is logged once, pending shutdown errors are cleared, and repeated identical `glGetError()` values are capped at three lines.
+- State dumps now recognize a missing context and print a concise `GL state unavailable` line instead of misleading `vendor=<null>`, `maxTextureSize=0`, and `activeUnit=-33984` values. Frame entry resets the displayed render step, so a new frame no longer reports the previous frame’s `step=complete`.
 
 Typical failure lines look like:
 
@@ -206,5 +208,30 @@ Typical failure lines look like:
 - `src/3d/ru/woesss/j2me/micro3d/TextureImpl.java` — immediate check after game texture uploads and upload-parameter logging.
 - `src/main/emulator/AppSettings.java` — `MascotGLDebug` property, default, load, and save.
 - `src/main/emulator/ui/swt/AppSettingsUI.java` — **GL debug output** checkbox in the MascotCapsule LWJGL group.
+- `src/3d/emulator/graphics3D/lwjgl/Emulator3D.java` — visible `exiting` flag and `isExiting()` for shutdown-aware diagnostics.
 
-The full desktop source set was compiled with the repository’s JDK 8 / LWJGL / SWT classpath: **compile check passed** (only pre-existing internal-API and unchecked-operation warnings). A no-GL smoke test also confirmed the symbolic error names and `[MC3D-GL]` error prefix. No GL/X emulator run or freej2me-plus verification was performed, so runtime behavior on the affected GPU still needs a real reproduction with `MascotGLDebug=true`.
+The full desktop source set was compiled with the repository’s JDK 8 / LWJGL / SWT classpath: **compile check passed** (only pre-existing internal-API and unchecked-operation warnings). No-GL smoke tests also confirmed the symbolic error names, `[MC3D-GL]` prefix, and that the shutdown/context-loss guard returns `true` without throwing. No GL/X emulator run or freej2me-plus verification was performed, so runtime behavior on the affected GPU still needs a real reproduction with `MascotGLDebug=true`.
+
+---
+
+## 8. Force-close log is a shutdown/context-loss artifact
+
+The user later supplied a log captured while force-closing the emulator. It showed 32 identical `flushToBuffer [stale before operation]: glError 1282` lines, then a state dump with `vendor=<null>`, `renderer=<null>`, `version=<null>`, `maxTextureSize=0`, `activeUnit=-33984`, and all other GL state values at zero. That pattern means there was **no current GL context** by the time the M3G thread processed queued frame 251: `Emulator3D.exit()` had begun teardown, and `glGetError()` kept returning `GL_INVALID_OPERATION` from the destroyed/lost context. `NPOT=true` in that dump comes from the cached `GLCapabilities` object, not from a live context.
+
+This is not evidence for the original missing-background bug. The `lastTextureUpload` line is a normal backbuffer upload: `GL_RGB`, `240x320`, `textureId=1`, and `DirectByteBuffer[pos=76800, remaining=230400, capacity=307200]` — the expected 230400-byte RGB tail slice of a 307200-byte buffer. The exception stack (`GLDebug.drain` → `checkStale` → `flushToBuffer`) was the new stale-error check correctly seeing sticky shutdown errors, but then treating them like a live-context rendering error and throwing. The old `step=complete` shown on frame 251’s entry line was also stale: `beginFrame()` logged before resetting `flushStep` from the previous frame.
+
+The debug instrumentation was tightened accordingly:
+
+- `Emulator3D.exiting` is now volatile and exposed through `isExiting()`.
+- `GLDebug.skipShutdownOrContextLoss()` checks the shutdown flag and, when necessary, detects a missing context via a null `GL_VERSION` or zero `GL_MAX_TEXTURE_SIZE`. It logs one concise suppression line, clears pending shutdown errors, and returns `true` so callers skip GL work.
+- `flushToBuffer`, `flush`, `drawFigure`, `release`, `copy2d`, `TextureImpl.loadToGL`, bind/render/clip paths, and texture-ID generation skip GL calls during shutdown. Skipped frames do not call `swapBuffers()`.
+- `check`/`checkStale` no longer throw on shutdown/context-loss errors; `drain` stops after three identical errors instead of printing 32 copies; `dumpState` prints `GL state unavailable` instead of null/zero state; and `beginFrame` resets the displayed step.
+
+Expected force-close output is now one suppression line, plus a verbose frame-skip line only when that frame is included by the opt-in trace schedule:
+
+```text
+[MC3D-GL] flushToBuffer: emulator is shutting down; suppressing shutdown/context-loss GL errors and skipping GL work
+[MC3D-GL] frame 251: flushToBuffer: skipped stack=4, target=graphics 240x320, transparent=false, clip=0,0 240x320, backCopied=true, step=skipped (shutdown/context loss)
+```
+
+If teardown is detected by context loss before the shutdown flag is visible, the first line instead says `GL context is no longer current`. Either way, no `RuntimeException`, stack trace, or repeated `1282` flood should be produced on force close. The original live-rendering diagnosis and the need for a non-force-closed runtime reproduction remain unchanged.

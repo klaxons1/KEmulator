@@ -104,6 +104,8 @@ public class Render {
 
 	private static String flushStepName(int step) {
 		switch (step) {
+			case -1:
+				return "enter / not started";
 			case 0:
 				return "copy2d(true)";
 			case 1:
@@ -114,6 +116,8 @@ public class Render {
 				return "finish / readback / swap";
 			case 4:
 				return "complete";
+			case 5:
+				return "skipped (shutdown/context loss)";
 			default:
 				return "step " + step;
 		}
@@ -129,6 +133,7 @@ public class Render {
 
 	private long beginFrame(String event) {
 		long frameId = ++glDebugFrameId;
+		flushStep = -1;
 		GLDebug.frame(frameId, event + ": enter " + frameDetails());
 		return frameId;
 	}
@@ -167,6 +172,9 @@ public class Render {
 			init();
 		}
 		g3d.sync(() -> {
+			if (GLDebug.isShuttingDown()) {
+				return;
+			}
 			IImage bitmap = graphics.getImage();
 			int width = bitmap.getWidth();
 			int height = bitmap.getHeight();
@@ -243,6 +251,9 @@ public class Render {
 			init();
 		}
 		g3d.sync(() -> {
+			if (GLDebug.isShuttingDown()) {
+				return;
+			}
 			if (env.width != width || env.height != height) {
 				if (wasBinded) g3d.releaseTarget();
 				g3d.bindTarget(Image.createImage(width, height, 0).getGraphics());
@@ -311,6 +322,9 @@ public class Render {
 			return;
 		}
 		Profiler3D.MC3D_copy2dCount++;
+		if (GLDebug.skipShutdownOrContextLoss("copy2d")) {
+			return;
+		}
 		GLDebug.checkStale("copy2d");
 		GLDebug.trace("copy2d: enter preProcess=" + preProcess
 				+ ", backCopied=" + backCopied
@@ -454,6 +468,9 @@ public class Render {
 		Profiler3D.MC3D_renderFigureCallCount++;
 
 		g3d.sync(() -> {
+			if (GLDebug.isShuttingDown()) {
+				return;
+			}
 			boolean isTransparency = (attrs & Graphics3D.ENV_ATTR_SEMI_TRANSPARENT) != 0;
 			if (!isTransparency && flushStep == 2) {
 				return;
@@ -655,6 +672,12 @@ public class Render {
 		final long frameId = beginFrame("release");
 		g3d.sync(() -> {
 			flushStep = 0;
+			if (GLDebug.skipShutdownOrContextLoss("release")) {
+				flushStep = 5;
+				stack.clear();
+				GLDebug.frame(frameId, "release: skipped " + frameDetails());
+				return;
+			}
 			try {
 				GLDebug.checkStale("release");
 				GLDebug.frameState(frameId, "before release copy/readback");
@@ -678,7 +701,9 @@ public class Render {
 				throw e;
 			}
 		});
-		g3d.releaseTarget();
+		if (!GLDebug.isShuttingDown()) {
+			g3d.releaseTarget();
+		}
 	}
 
 	public synchronized void flush() {
@@ -690,8 +715,14 @@ public class Render {
 			return;
 		}
 		g3d.sync(() -> {
+			boolean skip = GLDebug.skipShutdownOrContextLoss("flush");
 			flushStep = 0;
 			try {
+				if (skip) {
+					flushStep = 5;
+					GLDebug.frame(frameId, "flush: skipped " + frameDetails());
+					return;
+				}
 				GLDebug.checkStale("flush");
 				GLDebug.frameState(frameId, "before copy2d");
 				if (!backCopied && !AppSettings.mascotIgnoreBackground) {
@@ -719,7 +750,9 @@ public class Render {
 				throw e;
 			} finally {
 				stack.clear();
-				swapBuffers();
+				if (!skip) {
+					swapBuffers();
+				}
 				GLDebug.frame(frameId, "flush: finally stack cleared, step="
 						+ flushStepName(flushStep));
 			}
@@ -921,6 +954,9 @@ public class Render {
 
 	private void updateClip() {
 		g3d.sync(() -> {
+			if (GLDebug.isShuttingDown()) {
+				return;
+			}
 			Rectangle clip = this.clip;
 			int l = clip.x;
 			int t = clip.y;
@@ -1248,8 +1284,14 @@ public class Render {
 
 		final long frameId = beginFrame("drawFigure");
 		g3d.sync(() -> {
+			boolean skip = GLDebug.skipShutdownOrContextLoss("drawFigure");
 			flushStep = 0;
 			try {
+				if (skip) {
+					flushStep = 5;
+					GLDebug.frame(frameId, "drawFigure: skipped " + frameDetails());
+					return;
+				}
 				GLDebug.checkStale("drawFigure");
 				GLDebug.frameState(frameId, "before copy2d");
 				if (!backCopied && !AppSettings.mascotIgnoreBackground) {
@@ -1304,9 +1346,11 @@ public class Render {
 				logFrameFailure(frameId, "drawFigure", flushStepName(flushStep), e);
 				throw e;
 			} finally {
-				swapBuffers();
-				GLDebug.frame(frameId, "drawFigure: finally swapBuffers, step="
-						+ flushStepName(flushStep));
+				if (!skip) {
+					swapBuffers();
+				}
+				GLDebug.frame(frameId, "drawFigure: finally swapBuffers skipped="
+						+ skip + ", step=" + flushStepName(flushStep));
 			}
 		});
 	}
@@ -1603,6 +1647,11 @@ public class Render {
 		g3d.sync(() -> {
 			flushStep = 0;
 			try {
+				if (GLDebug.skipShutdownOrContextLoss("flushToBuffer")) {
+					flushStep = 5;
+					GLDebug.frame(frameId, "flushToBuffer: skipped " + frameDetails());
+					return;
+				}
 				GLDebug.checkStale("flushToBuffer");
 				if (stack.isEmpty()) {
 					GLDebug.frame(frameId, "flushToBuffer: empty stack; nothing rendered");

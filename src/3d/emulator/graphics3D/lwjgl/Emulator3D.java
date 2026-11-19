@@ -47,7 +47,7 @@ import static org.lwjgl.opengl.GL13.GL_MULTISAMPLE;
 
 public final class Emulator3D implements IGraphics3D {
 
-	private static Emulator3D instance;
+	private static volatile Emulator3D instance;
 	private final LWJGLUtil memoryBuffers;
 	private final RenderPipe renderPipe;
 	private Object target;
@@ -98,7 +98,7 @@ public final class Emulator3D implements IGraphics3D {
 	public static final int MaxSpriteCropDimension = 1024;
 	public static final int MaxLights = 8;
 	public static final int MaxTransformsPerVertex = 4;
-	private boolean exiting;
+	private volatile boolean exiting;
 	private final Map<Integer, Image2D> texturesTable = new WeakHashMap<Integer, Image2D>();
 
 	private boolean flipImage;
@@ -1387,6 +1387,12 @@ public final class Emulator3D implements IGraphics3D {
 		if (instance == null)
 			return;
 		instance.dispose();
+	}
+
+	/** True once GL teardown has begun; the M3G thread can still have queued frames. */
+	public static boolean isExiting() {
+		Emulator3D e = instance;
+		return e != null && e.exiting;
 	}
 
 	private void disposeGlCanvas() {
