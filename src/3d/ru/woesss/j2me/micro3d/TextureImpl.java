@@ -149,6 +149,7 @@ public final class TextureImpl {
 	}
 
 	private void loadToGL() {
+		GLDebug.checkStale("TextureImpl.loadToGL");
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, mTexId);
 
@@ -157,9 +158,20 @@ public final class TextureImpl {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter ? GL_LINEAR : GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.getRaster());
-
-		glBindTexture(GL_TEXTURE_2D, 0);
+		java.nio.ByteBuffer raster = image.getRaster();
+		GLDebug.logTextureUpload("TextureImpl.loadToGL[" + (isMutable ? "mutable" : "immutable") + "]",
+				GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, raster, mTexId);
+		try {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, raster);
+		} finally {
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+		Render.checkGlError("TextureImpl.loadToGL.glTexImage2D");
+		GLDebug.trace("TextureImpl.loadToGL: uploaded id=" + mTexId
+				+ ", size=" + image.width + "x" + image.height
+				+ ", filter=" + filter);
 	}
 
 	@Override

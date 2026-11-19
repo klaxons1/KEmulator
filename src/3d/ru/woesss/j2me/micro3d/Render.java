@@ -71,6 +71,8 @@ public class Render {
 
 	private Emulator3D g3d;
 	private boolean wasBinded;
+	private boolean glContextLogged;
+	private long glDebugFrameId;
 
 	/**
 	 * Utility method for debugging OpenGL calls.
@@ -80,11 +82,71 @@ public class Render {
 	 * @param glOperation - Name of the OpenGL call to check.
 	 */
 	static void checkGlError(String glOperation) {
-		int error = glGetError();
-		if (error != GL_NO_ERROR) {
-			System.err.println(glOperation + ": glError " + error);
-			throw new RuntimeException(glOperation + ": glError " + error);
+		GLDebug.check(glOperation);
+	}
+
+	private String targetInfo() {
+		if (targetTexture != null) {
+			return "texture " + targetTexture.getWidth() + "x" + targetTexture.getHeight()
+					+ ", id=" + targetTexture.mTexId;
 		}
+		if (targetGraphics != null) {
+			IImage bitmap = targetGraphics.getImage();
+			return "graphics " + bitmap.getWidth() + "x" + bitmap.getHeight()
+					+ ", transparent=" + bitmap.isTransparent();
+		}
+		return "none";
+	}
+
+	private String clipInfo() {
+		return clip.x + "," + clip.y + " " + clip.width + "x" + clip.height;
+	}
+
+	private static String flushStepName(int step) {
+		switch (step) {
+			case 0:
+				return "copy2d(true)";
+			case 1:
+				return "render pass 1";
+			case 2:
+				return "render pass 2";
+			case 3:
+				return "finish / readback / swap";
+			case 4:
+				return "complete";
+			default:
+				return "step " + step;
+		}
+	}
+
+	private String frameDetails() {
+		return "stack=" + stack.size()
+				+ ", target=" + targetInfo()
+				+ ", clip=" + clipInfo()
+				+ ", backCopied=" + backCopied
+				+ ", step=" + flushStepName(flushStep);
+	}
+
+	private long beginFrame(String event) {
+		long frameId = ++glDebugFrameId;
+		GLDebug.frame(frameId, event + ": enter " + frameDetails());
+		return frameId;
+	}
+
+	private void logFrameFailure(long frameId, String event, String step, RuntimeException e) {
+		GLDebug.frameError(frameId, event + " aborted at " + step + ", "
+				+ frameDetails() + ", exception=" + e);
+		e.printStackTrace(System.err);
+		GLDebug.dumpState("frame " + frameId + ": " + event + ".abort");
+	}
+
+	private void logContextOnce(String operation) {
+		if (!GLDebug.verbose() || glContextLogged) {
+			return;
+		}
+		GLDebug.check(operation + ".context");
+		GLDebug.logContext(operation);
+		glContextLogged = true;
 	}
 
 	public static Render getRender() {
@@ -163,6 +225,11 @@ public class Render {
 			}
 
 			backCopied = false;
+			logContextOnce("bind(graphics)");
+			GLDebug.trace("bind(graphics): target=" + targetInfo()
+					+ ", size=" + width + "x" + height
+					+ ", clip=" + clipInfo()
+					+ ", backCopied=false");
 		});
 	}
 
@@ -208,6 +275,11 @@ public class Render {
 					1.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			backCopied = false;
+			logContextOnce("bind(texture)");
+			GLDebug.trace("bind(texture): target=" + targetInfo()
+					+ ", size=" + width + "x" + height
+					+ ", clip=" + clipInfo()
+					+ ", clearColor=0x" + Integer.toHexString(clearColor));
 		});
 	}
 
@@ -239,6 +311,11 @@ public class Render {
 			return;
 		}
 		Profiler3D.MC3D_copy2dCount++;
+		GLDebug.checkStale("copy2d");
+		GLDebug.trace("copy2d: enter preProcess=" + preProcess
+				+ ", backCopied=" + backCopied
+				+ ", target=" + targetInfo()
+				+ ", clip=" + clipInfo());
 
 		if (!glIsTexture(bgTextureId.get(0))) {
 			bgTextureId.rewind();
@@ -256,12 +333,21 @@ public class Render {
 		}
 		IImage targetImage = targetGraphics.getImage();
 		int texFormat = targetImage.isTransparent() ? GL_RGBA : GL_RGB;
+		ByteBuffer pixels = getImageBuffer(convert(targetImage.getData(), targetImage.isTransparent()));
+		GLDebug.logTextureUpload("copy2d.texImage2D",
+				GL_TEXTURE_2D, 0, texFormat,
+				targetImage.getWidth(), targetImage.getHeight(), 0,
+				texFormat, GL_UNSIGNED_BYTE,
+				pixels, bgTextureId.get(0));
 		GL11.glTexImage2D(GL_TEXTURE_2D, 0,
 				texFormat, targetImage.getWidth(), targetImage.getHeight(), 0,
 				texFormat, GL_UNSIGNED_BYTE,
-				getImageBuffer(convert(targetImage.getData(), targetImage.isTransparent()))
+				pixels
 		);
 		checkGlError("texImage2D");
+		GLDebug.trace("copy2d: texImage2D completed, format="
+				+ (texFormat == GL_RGBA ? "GL_RGBA" : "GL_RGB")
+				+ ", size=" + targetImage.getWidth() + "x" + targetImage.getHeight());
 
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		glActiveTexture(GL_TEXTURE0);
@@ -566,17 +652,30 @@ public class Render {
 	public synchronized void release() {
 		Profiler3D.MC3D_releaseCallCount++;
 
+		final long frameId = beginFrame("release");
 		g3d.sync(() -> {
-			stack.clear();
-			if (targetTexture != null) {
-				glReadPixels(0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE, targetTexture.image.getRaster());
-				targetTexture = null;
-			} else if (targetGraphics != null) {
-				if (!AppSettings.mascotNo2DMixing) {
-					copy2d(false);
+			flushStep = 0;
+			try {
+				GLDebug.checkStale("release");
+				GLDebug.frameState(frameId, "before release copy/readback");
+				stack.clear();
+				if (targetTexture != null) {
+					glReadPixels(0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE, targetTexture.image.getRaster());
+					targetTexture = null;
+				} else if (targetGraphics != null) {
+					if (!AppSettings.mascotNo2DMixing) {
+						copy2d(false);
+					}
+					swapBuffers();
+					targetGraphics = null;
 				}
-				swapBuffers();
-				targetGraphics = null;
+				flushStep = 3;
+				checkGlError("release.end");
+				flushStep = 4;
+				GLDebug.frame(frameId, "release: complete " + frameDetails());
+			} catch (RuntimeException e) {
+				logFrameFailure(frameId, "release", flushStepName(flushStep), e);
+				throw e;
 			}
 		});
 		g3d.releaseTarget();
@@ -585,11 +684,16 @@ public class Render {
 	public synchronized void flush() {
 		Profiler3D.MC3D_flushCallCount++;
 
+		final long frameId = beginFrame("flush");
 		if (stack.isEmpty()) {
+			GLDebug.frame(frameId, "flush: empty stack; nothing rendered");
 			return;
 		}
 		g3d.sync(() -> {
+			flushStep = 0;
 			try {
+				GLDebug.checkStale("flush");
+				GLDebug.frameState(frameId, "before copy2d");
 				if (!backCopied && !AppSettings.mascotIgnoreBackground) {
 					copy2d(true);
 				}
@@ -602,13 +706,22 @@ public class Render {
 					r.render(this);
 					r.recycle();
 				}
+				flushStep = 3;
 				glDisable(GL_BLEND);
 				glDepthMask(true);
 				glClear(GL_DEPTH_BUFFER_BIT);
 				glFlush();
+				checkGlError("flush.end");
+				flushStep = 4;
+				GLDebug.frame(frameId, "flush: complete " + frameDetails());
+			} catch (RuntimeException e) {
+				logFrameFailure(frameId, "flush", flushStepName(flushStep), e);
+				throw e;
 			} finally {
 				stack.clear();
 				swapBuffers();
+				GLDebug.frame(frameId, "flush: finally stack cleared, step="
+						+ flushStepName(flushStep));
 			}
 		});
 	}
@@ -1133,11 +1246,15 @@ public class Render {
 	public synchronized void drawFigure(FigureImpl figure) {
 		Profiler3D.MC3D_drawFigureCallCount++;
 
+		final long frameId = beginFrame("drawFigure");
 		g3d.sync(() -> {
-			if (!backCopied && !AppSettings.mascotIgnoreBackground) {
-				copy2d(true);
-			}
+			flushStep = 0;
 			try {
+				GLDebug.checkStale("drawFigure");
+				GLDebug.frameState(frameId, "before copy2d");
+				if (!backCopied && !AppSettings.mascotIgnoreBackground) {
+					copy2d(true);
+				}
 				Model model = figure.model;
 				figure.prepareBuffers();
 
@@ -1176,11 +1293,20 @@ public class Render {
 						env.toonHigh,
 						env.toonLow);
 
+				flushStep = 3;
 				glDisable(GL_BLEND);
 				glDepthMask(true);
 				glClear(GL_DEPTH_BUFFER_BIT);
+				checkGlError("drawFigure.end");
+				flushStep = 4;
+				GLDebug.frame(frameId, "drawFigure: complete " + frameDetails());
+			} catch (RuntimeException e) {
+				logFrameFailure(frameId, "drawFigure", flushStepName(flushStep), e);
+				throw e;
 			} finally {
 				swapBuffers();
+				GLDebug.frame(frameId, "drawFigure: finally swapBuffers, step="
+						+ flushStepName(flushStep));
 			}
 		});
 	}
@@ -1472,11 +1598,17 @@ public class Render {
 	public synchronized void flushToBuffer() {
 		Profiler3D.MC3D_flushCallCount++;
 
+		final long frameId = beginFrame("flushToBuffer");
+
 		g3d.sync(() -> {
-			if (stack.isEmpty()) {
-				return;
-			}
+			flushStep = 0;
 			try {
+				GLDebug.checkStale("flushToBuffer");
+				if (stack.isEmpty()) {
+					GLDebug.frame(frameId, "flushToBuffer: empty stack; nothing rendered");
+					return;
+				}
+				GLDebug.frameState(frameId, "before copy2d");
 				copy2d(true);
 				flushStep = 1;
 				for (RenderNode r : stack) {
@@ -1487,6 +1619,7 @@ public class Render {
 					r.render(this);
 					r.recycle();
 				}
+				flushStep = 3;
 				glDisable(GL_BLEND);
 				glDepthMask(true);
 				glFlush();
@@ -1496,8 +1629,17 @@ public class Render {
 					swapBuffers();
 				}
 				glClear(GL_DEPTH_BUFFER_BIT);
+				checkGlError("flushToBuffer.end");
+				flushStep = 4;
+				GLDebug.frame(frameId, "flushToBuffer: complete stack=" + stack.size()
+						+ ", target=" + targetInfo());
+			} catch (RuntimeException e) {
+				logFrameFailure(frameId, "flushToBuffer", flushStepName(flushStep), e);
+				throw e;
 			} finally {
 				stack.clear();
+				GLDebug.frame(frameId, "flushToBuffer: finally stack cleared, step="
+						+ flushStepName(flushStep));
 			}
 		});
 	}

@@ -78,6 +78,7 @@ public class AppSettingsUI {
 	private Button mascotIgnoreBgCheck;
 	private Button mascotTextureFilterCheck;
 	private Button mascotBackgroundFilterCheck;
+	private Button mascotGlDebugCheck;
 	private Button m3gFlushImmediately;
 	private Button m3gIgnoreOverwriteCheck;
 	private Button m3gForcePersCorrectCheck;
@@ -639,6 +640,12 @@ public class AppSettingsUI {
 		mascotBackgroundFilterCheck.setText(UILocale.get("OPTION_MASCOT_BACKGROUND_FILTER", "Background filter"));
 		mascotBackgroundFilterCheck.setSelection(AppSettings.mascotBackgroundFilter);
 
+		mascotGlDebugCheck = new Button(grpMascotcapsuleLwjgl, SWT.CHECK);
+		mascotGlDebugCheck.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false, 1, 1));
+		mascotGlDebugCheck.setText(UILocale.get("OPTION_MASCOT_GL_DEBUG", "GL debug output"));
+		mascotGlDebugCheck.setToolTipText("Log MC3D GL errors, texture uploads and frame state to stderr");
+		mascotGlDebugCheck.setSelection(AppSettings.mascotGlDebug);
+
 		composite_8.setSize(composite_8.computeSize(SWT.DEFAULT, SWT.DEFAULT));
 		scrolledComposite_1.setContent(composite_8);
 		scrolledComposite_1.setMinSize(composite_8.computeSize(SWT.DEFAULT, SWT.DEFAULT));
@@ -898,6 +905,7 @@ public class AppSettingsUI {
 			AppSettings.mascotIgnoreBackground = mascotIgnoreBgCheck.getSelection();
 			AppSettings.mascotTextureFilter = mascotTextureFilterCheck.getSelection();
 			AppSettings.mascotBackgroundFilter = mascotBackgroundFilterCheck.getSelection();
+			AppSettings.mascotGlDebug = mascotGlDebugCheck.getSelection();
 		}
 
 		// system properties

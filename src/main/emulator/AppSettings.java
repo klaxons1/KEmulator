@@ -99,6 +99,7 @@ public class AppSettings {
 	public static boolean mascotIgnoreBackground;
 	public static boolean mascotTextureFilter;
 	public static boolean mascotBackgroundFilter;
+	public static boolean mascotGlDebug;
 
 	public static final Map<String, String> systemProperties = new HashMap<>();
 
@@ -158,6 +159,7 @@ public class AppSettings {
 		mascotIgnoreBackground = false;
 		mascotTextureFilter = false;
 		mascotBackgroundFilter = false;
+		mascotGlDebug = false;
 
 		loadIni(false, "Default");
 	}
@@ -482,6 +484,10 @@ public class AppSettings {
 			mascotBackgroundFilter = Boolean.parseBoolean(properties.get("MascotBackgroundFilter"));
 		}
 
+		if (properties.containsKey("MascotGLDebug")) {
+			mascotGlDebug = Boolean.parseBoolean(properties.get("MascotGLDebug"));
+		}
+
 		if (properties.containsKey("SystemProperties")) {
 			systemProperties.clear();
 			String[] sysProps = properties.get("SystemProperties").split("\n");
@@ -558,6 +564,7 @@ public class AppSettings {
 		AppSettings.set("MascotIgnoreBackground", mascotIgnoreBackground);
 		AppSettings.set("MascotTextureFilter", mascotTextureFilter);
 		AppSettings.set("MascotBackgroundFilter", mascotBackgroundFilter);
+		AppSettings.set("MascotGLDebug", mascotGlDebug);
 
 		StringBuilder sb = new StringBuilder();
 		if (!AppSettings.systemProperties.isEmpty()) {
