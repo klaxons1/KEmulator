@@ -234,7 +234,7 @@ public class Render {
 
 			backCopied = false;
 			logContextOnce("bind(graphics)");
-			GLDebug.trace("bind(graphics): target=" + targetInfo()
+			GLDebug.traceFrame("bind(graphics): target=" + targetInfo()
 					+ ", size=" + width + "x" + height
 					+ ", clip=" + clipInfo()
 					+ ", backCopied=false");
@@ -287,7 +287,7 @@ public class Render {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			backCopied = false;
 			logContextOnce("bind(texture)");
-			GLDebug.trace("bind(texture): target=" + targetInfo()
+			GLDebug.traceFrame("bind(texture): target=" + targetInfo()
 					+ ", size=" + width + "x" + height
 					+ ", clip=" + clipInfo()
 					+ ", clearColor=0x" + Integer.toHexString(clearColor));
@@ -326,7 +326,7 @@ public class Render {
 			return;
 		}
 		GLDebug.checkStale("copy2d");
-		GLDebug.trace("copy2d: enter preProcess=" + preProcess
+		GLDebug.traceFrame("copy2d: enter preProcess=" + preProcess
 				+ ", backCopied=" + backCopied
 				+ ", target=" + targetInfo()
 				+ ", clip=" + clipInfo());
@@ -359,7 +359,7 @@ public class Render {
 				pixels
 		);
 		checkGlError("texImage2D");
-		GLDebug.trace("copy2d: texImage2D completed, format="
+		GLDebug.traceFrame("copy2d: texImage2D completed, format="
 				+ (texFormat == GL_RGBA ? "GL_RGBA" : "GL_RGB")
 				+ ", size=" + targetImage.getWidth() + "x" + targetImage.getHeight());
 

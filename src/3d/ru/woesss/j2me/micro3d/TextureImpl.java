@@ -178,7 +178,7 @@ public final class TextureImpl {
 			glBindTexture(GL_TEXTURE_2D, 0);
 		}
 		Render.checkGlError("TextureImpl.loadToGL.glTexImage2D");
-		GLDebug.trace("TextureImpl.loadToGL: uploaded id=" + mTexId
+		GLDebug.traceFrame("TextureImpl.loadToGL: uploaded id=" + mTexId
 				+ ", size=" + image.width + "x" + image.height
 				+ ", filter=" + filter);
 	}

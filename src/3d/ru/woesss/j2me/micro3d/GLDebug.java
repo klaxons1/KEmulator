@@ -45,6 +45,7 @@ final class GLDebug {
 	private static volatile String lastFrame = "none";
 	private static volatile String lastTextureUpload = "none";
 	private static volatile boolean suppressionReported;
+	private static volatile long currentFrameId;
 
 	private GLDebug() {
 	}
@@ -56,6 +57,17 @@ final class GLDebug {
 	static void trace(String message) {
 		if (verbose()) {
 			log(message);
+		}
+	}
+
+	/**
+	 * High-frequency traces (bind, copy2d, upload completion) are tied to the
+	 * same frame schedule as frame/state dumps. They are still recorded in
+	 * lastTextureUpload/lastFrame for error reports even when not printed.
+	 */
+	static void traceFrame(String message) {
+		if (frameTrace(currentFrameId)) {
+			log("frame " + currentFrameId + ": " + message);
 		}
 	}
 
@@ -129,6 +141,7 @@ final class GLDebug {
 
 	static void frame(long frame, String message) {
 		String line = "frame " + frame + ": " + message;
+		currentFrameId = frame;
 		lastFrame = line;
 		if (frameTrace(frame)) {
 			log(line);
@@ -138,6 +151,7 @@ final class GLDebug {
 	/** Always print a frame failure, even when verbose frame tracing is off. */
 	static void frameError(long frame, String message) {
 		String line = "frame " + frame + ": " + message;
+		currentFrameId = frame;
 		lastFrame = line;
 		log("[ERROR] " + line);
 	}
@@ -297,7 +311,7 @@ final class GLDebug {
 		sb.append(", textureId=").append(textureId);
 		sb.append(", data=").append(bufferInfo(data));
 		lastTextureUpload = sb.toString();
-		if (!verbose()) {
+		if (!frameTrace(currentFrameId)) {
 			return;
 		}
 		try {

@@ -165,7 +165,8 @@ The diagnosis itself did not change rendering behavior. A later, separate change
 - **High:** no missing asset; `clearBG` is a colored 3D quad; the error string comes from `Render.copy2d`; the thrown exception aborts `flushToBuffer()` before the quad/readback, so the background disappears.
 - **High:** the game's mixed 2D/3D `flush()` pattern is valid for JBlend/MC3D and is what triggers KEmulator's 2D-backbuffer copy path.
 - **Medium:** the original `1282` is caused by stale/leaked GL state or log-window/UI reentrancy on the MC3D path; upstream #301 independently correlates `ShowLogFrame=true` with the symptom.
-- **Not proven:** NPOT texture dimensions as the primary cause, or the exact first GL command that sets the error flag. Runtime GL instrumentation on the affected GPU is needed for that final attribution.
+- **New live-context evidence:** a later AMD Radeon R5 M230 / 4.6 compatibility-profile log shows `NPOT=true`, `pixelUnpackBuffer=0`, `unpackAlignment=1`, `unpackRowLength=0`, `unpackSkipRows=0`, `unpackSkipPixels=0`, `maxTextureSize=16384`, and no GL error during successful `copy2d` uploads. NPOT, PBO, and leaked pixel-store state are therefore ruled out on that GPU/driver.
+- **Still not proven:** the exact first GL command that sets `1282` on the originally affected setup. Runtime GL instrumentation on that setup is still needed for final attribution.
 
 ---
 
@@ -187,7 +188,7 @@ Error diagnostics are always improved; the setting controls the extra per-frame/
 - Before `copy2d`, `TextureImpl.loadToGL`, `flush`, `drawFigure`, `release`, and `flushToBuffer`, a stale-error check attributes errors to the correct operation rather than the later `texImage2D` check.
 - On any GL error, a state snapshot is printed: vendor, renderer, version, `GL_MAX_TEXTURE_SIZE`, active texture unit, 2D texture binding, unpack alignment/row length/skip rows/skip pixels, current program (GL 2.0+), pixel-unpack-buffer binding (GL 2.1+), NPOT capability, last frame, and last texture upload.
 - Every `glTexImage2D` upload logs its label, target, level, internal format, width/height, border, format, type, texture ID, and buffer position/remaining/capacity. In verbose mode it also logs the pre-upload GL state.
-- Frame traces include frame number, stack size, target type/size, clip, `backCopied`, render step, and completion/abort. Failures also print the exception stack trace and the GL state snapshot. Verbose traces print the first 30 frames and every 60th frame afterward to avoid flooding at 30+ FPS.
+- Frame traces include frame number, stack size, target type/size, clip, `backCopied`, render step, and completion/abort. Failures also print the exception stack trace and the GL state snapshot. Verbose traces print the first 30 frames and every 60th frame afterward to avoid flooding at 30+ FPS. High-frequency bind, `copy2d`, and texture-upload lines use the same frame schedule; upload metadata is still retained for error reports even when the line is not printed.
 - Diagnostic state queries clear their own GL errors so the instrumentation itself cannot create the next frame’s mystery `1282`.
 - `Emulator3D.isExiting()` plus a null-version/zero-`GL_MAX_TEXTURE_SIZE` check detects emulator shutdown or a lost GL context. Frame entry, `copy2d`, texture upload, bind, render, and clip paths then skip GL work instead of throwing. The condition is logged once, pending shutdown errors are cleared, and repeated identical `glGetError()` values are capped at three lines.
 - State dumps now recognize a missing context and print a concise `GL state unavailable` line instead of misleading `vendor=<null>`, `maxTextureSize=0`, and `activeUnit=-33984` values. Frame entry resets the displayed render step, so a new frame no longer reports the previous frame’s `step=complete`.
@@ -235,3 +236,20 @@ Expected force-close output is now one suppression line, plus a verbose frame-sk
 ```
 
 If teardown is detected by context loss before the shutdown flag is visible, the first line instead says `GL context is no longer current`. Either way, no `RuntimeException`, stack trace, or repeated `1282` flood should be produced on force close. The original live-rendering diagnosis and the need for a non-force-closed runtime reproduction remain unchanged.
+
+---
+
+## 9. Live-frame log and trace throttling
+
+A later log from a normal-running frame 60, followed by force close, confirms the shutdown guard and provides real GPU state:
+
+- `vendor=ATI Technologies Inc.`, `renderer=AMD Radeon R5 M230 Series`, `version=4.6.14800 Compatibility Profile Context 23.11.1`.
+- `maxTextureSize=16384`, `NPOT=true`, `pixelUnpackBuffer=0`, `unpackAlignment=1`, `unpackRowLength=0`, `unpackSkipRows=0`, `unpackSkipPixels=0`.
+- The `copy2d` upload uses `GL_RGB`, `240x320`, `textureId=1`, active unit 1, and the expected `DirectByteBuffer[pos=76800, remaining=230400, capacity=307200]` tail slice. It reports `copy2d: texImage2D completed`, then `frame 60: flushToBuffer: complete`. There is **no GL error** in these live frames.
+- The final `emulator is shutting down; suppressing shutdown/context-loss GL errors and skipping GL work` line is the expected one-line shutdown notice. No exception, stack trace, or `1282` flood follows.
+
+This rules out NPOT, PBO, and leaked pixel-store state on this GPU/driver. It also shows why the earlier confidence notes called those clues, not proven causes.
+
+The repeated `copy2d: enter` / `copy2d.texImage2D` lines after frame 60 were **trace noise**, not repeated failures. They come from `flushToBuffer()` — the JBlend `Graphics.flush()` entry point — refreshing the 2D backbuffer on later frames while `backCopied` remains true. The frame/state lines were already throttled to the first 30 frames and every 60th frame, but bind, `copy2d`, and upload-completion traces were still printed on every frame. Those high-frequency traces now use the same `frameTrace` schedule; upload parameters are still recorded in `lastTextureUpload` for error dumps. No rendering behavior was changed.
+
+With the throttling applied, a frame such as 61–67 no longer emits three `copy2d` lines; only the first 30 frames and every 60th frame produce the verbose upload trace. Error reporting and shutdown suppression remain unconditional. A non-force-closed reproduction that actually shows the missing background is still needed to attribute the original `1282` on the affected setup.
