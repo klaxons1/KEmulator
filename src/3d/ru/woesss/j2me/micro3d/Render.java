@@ -240,6 +240,13 @@ public class Render {
 		}
 		Profiler3D.MC3D_copy2dCount++;
 
+		// GL errors remain pending across calls on the shared context. Don't
+		// abort this flush because an earlier operation left an error behind.
+		int pendingError;
+		while ((pendingError = glGetError()) != GL_NO_ERROR) {
+			System.err.println("Before Mascot Capsule 2D copy: glError " + pendingError);
+		}
+
 		if (!glIsTexture(bgTextureId.get(0))) {
 			bgTextureId.rewind();
 			glGenTextures(/*1, */bgTextureId);
@@ -254,6 +261,13 @@ public class Render {
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, bgTextureId.get(0));
 		}
+		checkGlError("2D background texture setup");
+
+		// convert() produces tightly packed RGB/RGBA bytes with no row padding.
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+		glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
 		IImage targetImage = targetGraphics.getImage();
 		int texFormat = targetImage.isTransparent() ? GL_RGBA : GL_RGB;
 		GL11.glTexImage2D(GL_TEXTURE_2D, 0,
@@ -263,7 +277,6 @@ public class Render {
 		);
 		checkGlError("texImage2D");
 
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, bgTextureId.get(0));
 
