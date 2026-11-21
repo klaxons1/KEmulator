@@ -194,16 +194,12 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 				} else {
 					g.setColor(0);
 					g.fillRect(displayX, displayY, width, height);
-					BufferedImage bi;
-					bi = AWTImageUtils.resize(frame, width, height);
-					//bi = resizeProportional(img, w, h);
-					Image draw = awtImgToLcdui(bi);
-					int x = displayX;
-					int y = displayY;
-					//if (draw.getWidth() < w)
-					//	x = (w - draw.getWidth()) / 2;
-					//if (draw.getHeight() < h)
-					//	y = (h - draw.getHeight()) / 2;
+					BufferedImage scaled = capture
+							? AWTImageUtils.resizeProportional(frame, width, height)
+							: AWTImageUtils.resize(frame, width, height);
+					Image draw = awtImgToLcdui(scaled);
+					int x = displayX + (width - draw.getWidth()) / 2;
+					int y = displayY + (height - draw.getHeight()) / 2;
 					g.drawImage(draw, x, y, 0);
 				}
 			} catch (Exception e) {
