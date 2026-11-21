@@ -27,11 +27,13 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.ImageOutputStream;
+import javax.microedition.lcdui.CustomItem;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
 import javax.microedition.media.*;
 import javax.microedition.media.control.*;
 import javax.microedition.media.protocol.DataSource;
+import java.awt.Dimension;
 import java.awt.image.*;
 import java.io.*;
 import java.lang.reflect.Field;
@@ -42,30 +44,33 @@ import java.util.Vector;
 
 public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 
-	private static VLCPlayerImpl inst;
+	private static volatile VLCPlayerImpl inst;
+	private boolean capture;
+	private String[] mediaOptions = new String[0];
+	private volatile VideoItem videoItem;
 
 	private Control[] controls;
 	private String contentType;
-	private int state;
+	private volatile int state;
 	public int dataLen;
 	private Vector listeners;
 	private TimeBase timeBase;
 	private String url;
 	private String mediaUrl;
 	private InputStream inputStream;
-	private boolean playing;
-	Object canvas;
-	public boolean isItem;
+	private volatile boolean playing;
+	volatile Object canvas;
+	public volatile boolean isItem;
 	public int displayX, displayY;
 	public int width, height;
-	public boolean visible = true;
+	public volatile boolean visible = true;
 	public int sourceWidth, sourceHeight;
 	public boolean fullscreen;
 	private boolean prepared;
-	public int bufferWidth, bufferHeight;
+	public volatile int bufferWidth, bufferHeight;
 	private static MediaPlayerFactory factory;
 	EmbeddedMediaPlayer mediaPlayer;
-	public BufferedImage img;
+	public volatile BufferedImage img;
 	public ByteBuffer bb;
 	boolean released;
 	private DataSource dataSource;
@@ -145,14 +150,26 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 		this.state = UNREALIZED;
 	}
 
+	protected VLCPlayerImpl(String url, String contentType, String[] mediaOptions) throws IOException {
+		this(url, contentType);
+		this.capture = true;
+		this.mediaOptions = mediaOptions.clone();
+	}
+
+	boolean isCapture() {
+		return capture;
+	}
+
 	public static void draw(Graphics g, Object obj) {
-		if (inst == null || obj != inst.canvas)
-			return;
-		inst.paint(g);
+		VLCPlayerImpl player = inst;
+		if (player != null && !player.isItem && (obj == player.canvas || player.capture && player.canvas == null)) {
+			player.paint(g);
+		}
 	}
 
 	private void paint(Graphics g) {
-		if (visible && img != null && playing) {
+		BufferedImage frame = img;
+		if (visible && frame != null && playing) {
 			if (width == 0 || height == 0) {
 				width = Emulator.getEmulator().getScreen().getWidth();
 				height = Emulator.getEmulator().getScreen().getHeight();
@@ -165,7 +182,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 						width = Emulator.getEmulator().getScreen().getWidth();
 						height = Emulator.getEmulator().getScreen().getHeight();
 					}
-					BufferedImage bi = AWTImageUtils.resizeProportional(img, width, height);
+					BufferedImage bi = AWTImageUtils.resizeProportional(frame, width, height);
 					Image draw = awtImgToLcdui(bi);
 					int x = 0;
 					int y = 0;
@@ -178,7 +195,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 					g.setColor(0);
 					g.fillRect(displayX, displayY, width, height);
 					BufferedImage bi;
-					bi = AWTImageUtils.resize(img, width, height);
+					bi = AWTImageUtils.resize(frame, width, height);
 					//bi = resizeProportional(img, w, h);
 					Image draw = awtImgToLcdui(bi);
 					int x = displayX;
@@ -324,7 +341,8 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 		if (!prepared) {
 			synchronized (vlcLock) {
 				load();
-				if (mediaUrl.startsWith("v4l2:") || mediaUrl.startsWith("ddraw:")) {
+				if (capture || mediaUrl != null && (mediaUrl.startsWith("v4l2:")
+						|| mediaUrl.startsWith("dshow:") || mediaUrl.startsWith("ddraw:"))) {
 					Permission.checkPermission("media.camera");
 				}
 				try {
@@ -334,7 +352,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 							throw new MediaException("failed to prepare");
 						}
 					} else {
-						if (!mediaPlayer.media().prepare(mediaUrl)) {
+						if (!mediaPlayer.media().prepare(mediaUrl, mediaOptions)) {
 							Manager.log("Failed to prepare");
 							throw new MediaException("failed to prepare");
 						}
@@ -385,6 +403,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			}
 			PlayerImpl.players.remove(this);
 			state = CLOSED;
+			playing = false;
 			if (inst == this) inst = null;
 			if (mediaPlayer != null) {
 				mediaPlayer.events().removeMediaPlayerEventListener(this);
@@ -400,6 +419,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			if (dataSource != null) {
 				dataSource.disconnect();
 			}
+			img = null;
 			released = true;
 			this.state = 0;
 		}
@@ -411,6 +431,14 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			throw new IllegalStateException("closed");
 		}
 		PlayerImpl.players.remove(this);
+		if (capture) {
+			try {
+				stop();
+			} catch (MediaException ignored) {}
+			if (state == PREFETCHED) state = REALIZED;
+			prepared = false;
+			return;
+		}
 		if (playing) {
 			try {
 				this.stop();
@@ -445,12 +473,18 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			if (!prepared) {
 				prefetch();
 			}
-			PlayerImpl.players.add(this);
+			if (!PlayerImpl.players.contains(this)) PlayerImpl.players.add(this);
+			if (capture) inst = this;
+			playing = true;
+			state = STARTED;
 			mediaPlayer.submit(new Runnable() {
 				@Override
 				public void run() {
 					synchronized (vlcLock) {
-						if (mediaPlayer != null) mediaPlayer.controls().start();
+						if (mediaPlayer != null && (!capture || playing)) {
+							if (capture) mediaPlayer.controls().play();
+							else mediaPlayer.controls().start();
+						}
 					}
 				}
 			});
@@ -465,13 +499,13 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 					}
 				});
 			}
-			playing = true;
-			state = STARTED;
 		}
 	}
 
 	private void update() {
-		Emulator.getEventQueue().queueRepaint();
+		VideoItem item = videoItem;
+		if (isItem && item != null) item.refresh();
+		else Emulator.getEventQueue().queueRepaint();
 	}
 
 	public void stop() throws IllegalStateException, MediaException {
@@ -479,6 +513,16 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			throw new IllegalStateException("closed");
 		}
 		if (playing) {
+			if (capture) {
+				playing = false;
+				state = PREFETCHED;
+				synchronized (vlcLock) {
+					mediaPlayer.controls().stop();
+					img = null;
+				}
+				update();
+				return;
+			}
 			mediaPlayer.submit(new Runnable() {
 				@Override
 				public void run() {
@@ -531,8 +575,36 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 	}
 
 	public Object getItem() {
-		// TODO
-		return null;
+		if (videoItem == null) videoItem = new VideoItem();
+		return videoItem;
+	}
+
+	void refreshVideoItem(boolean resize) {
+		VideoItem item = videoItem;
+		if (item != null) {
+			if (resize) item.resize();
+			else item.refresh();
+		}
+	}
+
+	private final class VideoItem extends CustomItem {
+		VideoItem() { super(null); }
+
+		void refresh() { repaint(); }
+		void resize() { invalidate(); }
+
+		protected int getMinContentWidth() { return 1; }
+		protected int getMinContentHeight() { return 1; }
+		protected int getPrefContentWidth(int availableHeight) { return width > 0 ? width : 160; }
+		protected int getPrefContentHeight(int availableWidth) { return height > 0 ? height : 120; }
+
+		protected void paint(Graphics graphics, int w, int h) {
+			BufferedImage frame = img;
+			if (visible && playing && frame != null && w > 0 && h > 0) {
+				Image image = awtImgToLcdui(AWTImageUtils.resizeProportional(frame, w, h));
+				graphics.drawImage(image, (w - image.getWidth()) / 2, (h - image.getHeight()) / 2, 0);
+			}
+		}
 	}
 
 	protected void notifyListeners(final String s, final Object o) {
@@ -604,7 +676,7 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 		@Override
 		public void allocatedBuffers(ByteBuffer[] buffers) {
 			bb = buffers[0];
-			img = new BufferedImage(bufferWidth, bufferHeight, BufferedImage.TYPE_3BYTE_BGR);
+			if (!capture) img = new BufferedImage(bufferWidth, bufferHeight, BufferedImage.TYPE_3BYTE_BGR);
 		}
 	}
 
@@ -618,10 +690,13 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			SampleModel sampleModel = new ComponentSampleModel(DataBuffer.TYPE_BYTE, bufferWidth, bufferHeight, 4, bufferWidth
 					* 4, new int[]{2, 1, 0});
 			Raster r = Raster.createRaster(sampleModel, buffer, null);
-			if (img == null || img.getWidth() != bufferWidth || img.getHeight() != bufferHeight) {
-				img = new BufferedImage(bufferWidth, bufferHeight, BufferedImage.TYPE_3BYTE_BGR);
+			BufferedImage frame = img;
+			if (capture || frame == null || frame.getWidth() != bufferWidth || frame.getHeight() != bufferHeight) {
+				frame = new BufferedImage(bufferWidth, bufferHeight, BufferedImage.TYPE_3BYTE_BGR);
 			}
-			img.setData(r);
+			frame.setData(r);
+			if (capture && !playing) return;
+			img = frame;
 			update();
 		}
 	}
@@ -728,8 +803,9 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 
 	@Override
 	public void stopped(MediaPlayer arg0) {
-		if (released) return;
-		this.state = PREFETCHED;
+		if (released || state == CLOSED) return;
+		if (!capture || state == STARTED) this.state = PREFETCHED;
+		if (capture) playing = false;
 		if (stoppedAtTime) {
 			notifyListeners(PlayerListener.STOPPED_AT_TIME, getMediaTime());
 			stoppedAtTime = false;
@@ -762,10 +838,12 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 
 	@Override
 	public void videoOutput(MediaPlayer arg0, int arg1) {
+		Dimension dimensions = arg0.video().videoDimension();
+		if (dimensions == null) return;
 		int w = sourceWidth;
 		int h = sourceHeight;
-		sourceHeight = mediaPlayer.video().videoDimension().height;
-		sourceWidth = mediaPlayer.video().videoDimension().width;
+		sourceHeight = dimensions.height;
+		sourceWidth = dimensions.width;
 		if (w != sourceWidth || h != sourceHeight)
 			notifyListeners(PlayerListener.SIZE_CHANGED, videoControl);
 	}
@@ -776,12 +854,22 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 	}
 
 	public void finished(MediaPlayer mediaPlayer) {
+		if (state == CLOSED) return;
+		if (capture) {
+			playing = false;
+			img = null;
+		}
 		this.state = PREFETCHED;
 		this.prepared = false;
 		notifyListeners(PlayerListener.END_OF_MEDIA, getMediaTime());
 	}
 
 	public void error(MediaPlayer mediaPlayer) {
+		if (capture && state == STARTED) {
+			playing = false;
+			state = PREFETCHED;
+			img = null;
+		}
 		Manager.log("vlcplayer error");
 		notifyListeners(PlayerListener.ERROR, null);
 	}

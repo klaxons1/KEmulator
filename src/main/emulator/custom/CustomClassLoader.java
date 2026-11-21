@@ -144,7 +144,7 @@ public final class CustomClassLoader extends ClassLoader {
 				|| s.startsWith("club.") || s.startsWith("com.github.")
 				|| s.startsWith("uk.co.caprica") || s.startsWith("ru.woesss.")
 				|| s.startsWith("org.slf4j.") || s.startsWith("org.pigler.")
-				|| s.startsWith("org.objectweb.") || s.startsWith("org.bridj")
+				|| s.startsWith("org.objectweb.")
 				|| s.startsWith("com.sun.jna.") || s.startsWith("org.lwjgl.")
 				|| s.startsWith("org.apache.tools.")|| s.startsWith("net.java.games.")
 				|| s.startsWith("ru.nnproject")

@@ -81,7 +81,8 @@ public class Manager {
 			return new MIDIImpl();
 		}
 		if (s.startsWith("capture://image") || s.startsWith("capture://video") || s.startsWith("capture://devcam0") || s.startsWith("capture://devcam1")) {
-			return new CapturePlayerImpl();
+			requireLibVlc();
+			return new CapturePlayerImpl(s);
 		}
 		String contentType = null;
 		try {
@@ -359,8 +360,10 @@ public class Manager {
 	public static String[] getSupportedProtocols(final String type) {
 		Vector<String> kem = new Vector<String>();
 		kem.add("device://tone");
-		kem.add("capture://video");
-		kem.add("capture://image");
+		if (CapturePlayerImpl.isCaptureSupported()) {
+			kem.add("capture://video");
+			kem.add("capture://image");
+		}
 		kem.add("file");
 		kem.add("http");
 		kem.add("https");

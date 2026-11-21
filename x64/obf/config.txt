@@ -91,7 +91,6 @@
 
 -keep public class uk.co.caprica.vlcj.** { public protected *; }
 
--keep class org.bridj.** { *; }
 
 -keep,allowshrinking public class org.slf4j.** { public protected *; }
 

@@ -28,9 +28,7 @@ asm 5.2
 lwjgl 3.3.6
 jinput 2.0.5
 jna 5.7.0
-webcam-capture 0.3.12
 slf4j-api 1.7.2
-bridj 0.7.0
 vlcj 4.7.3
 opencore-amr 0.1.6
 

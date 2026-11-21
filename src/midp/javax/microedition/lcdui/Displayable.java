@@ -3,7 +3,7 @@ package javax.microedition.lcdui;
 import emulator.*;
 import emulator.debug.Profiler;
 import emulator.lcdui.LCDUIUtils;
-import emulator.media.capture.CapturePlayerImpl;
+import emulator.media.vlc.VLCPlayerImpl;
 import emulator.ui.CommandsMenuPosition;
 import emulator.ui.IScreen;
 import emulator.ui.TargetedCommand;
@@ -330,7 +330,7 @@ public class Displayable {
 	}
 
 	void _paintSoftMenu(final Graphics graphics) {
-		CapturePlayerImpl.draw(graphics, Emulator.getCurrentDisplay().getCurrent());
+		if (Settings.enableVlc) VLCPlayerImpl.draw(graphics, this);
 	}
 
 	public static void _fpsLimiter() {

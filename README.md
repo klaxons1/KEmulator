@@ -68,6 +68,12 @@ Graphics card:
 - File>Export...>Java>Runnable JAR file
 - Select launch configuration, export destination, and click Finish
 
+## Camera capture
+
+Enable **VLC Player** in the emulator's Media settings and install a compatible libVLC (matching the emulator's architecture). Camera MIDlets use VLC's **DirectShow** input on Windows and **Video4Linux2** input on Linux. Windows uses the default camera; Linux uses `/dev/video0` by default and `/dev/video1` for `capture://devcam1`. The emulator needs permission to access the camera device.
+
+The preview is drawn inside MIDP, not in a separate VLC or DirectDraw window.
+
 ## Uses
 
 ### Libraries
@@ -78,8 +84,6 @@ Graphics card:
 - [vlcj](https://github.com/caprica/vlcj) 4.7.3
 - [JInput](https://github.com/jinput/jinput) 2.0.5
 - [jutils](https://github.com/jinput/jutils) 1.0.0
-- [webcam-capture](https://github.com/sarxos/webcam-capture) 0.3.12
-- [BrigJ](https://github.com/nativelibs4java/BridJ) 0.7.0
 - [lwjgl3-swt](https://github.com/LWJGLX/lwjgl3-swt)
 - org.apache.tools.zip
 - [opencore-amr](https://sourceforge.net/projects/opencore-amr) 0.1.6
