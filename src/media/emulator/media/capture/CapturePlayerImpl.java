@@ -23,7 +23,7 @@ public final class CapturePlayerImpl extends VLCPlayerImpl {
 
 	public static boolean isCaptureEnabled() {
 		return !Settings.disableCamera && System.getProperty("kemulator.disablecamera") == null
-				&& (Utils.win || Utils.linux);
+				&& (Utils.win || Utils.linux || Utils.macos);
 	}
 
 	public static boolean isCaptureSupported() {
@@ -37,6 +37,10 @@ public final class CapturePlayerImpl extends VLCPlayerImpl {
 		if (Utils.win) {
 			if (secondCamera) throw new MediaException("Only the default DirectShow camera is supported");
 			return "dshow://";
+		}
+		if (Utils.macos) {
+			if (secondCamera) throw new MediaException("Only the default AVFoundation camera is supported");
+			return "avcapture://";
 		}
 		return secondCamera ? "v4l2:///dev/video1" : "v4l2:///dev/video0";
 	}

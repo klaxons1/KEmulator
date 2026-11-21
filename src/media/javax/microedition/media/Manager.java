@@ -2,6 +2,7 @@ package javax.microedition.media;
 
 import emulator.Emulator;
 import emulator.Settings;
+import emulator.Utils;
 import emulator.custom.ResourceManager;
 import emulator.media.capture.CapturePlayerImpl;
 import emulator.media.tone.MIDITonePlayer;
@@ -531,7 +532,8 @@ public class Manager {
 
 					@Override
 					protected boolean setPluginPath(String pluginPath) {
-						return LibC.INSTANCE._putenv(String.format("%s=%s", PLUGIN_ENV_NAME, pluginPath)) == 0;
+						if (Utils.win) return LibC.INSTANCE._putenv(PLUGIN_ENV_NAME + "=" + pluginPath) == 0;
+						return LibC.INSTANCE.setenv(PLUGIN_ENV_NAME, pluginPath, 1) == 0;
 					}
 
 				};

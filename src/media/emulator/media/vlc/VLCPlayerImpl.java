@@ -338,7 +338,8 @@ public class VLCPlayerImpl implements Player, MediaPlayerEventListener {
 			synchronized (vlcLock) {
 				load();
 				if (capture || mediaUrl != null && (mediaUrl.startsWith("v4l2:")
-						|| mediaUrl.startsWith("dshow:") || mediaUrl.startsWith("ddraw:"))) {
+						|| mediaUrl.startsWith("dshow:") || mediaUrl.startsWith("ddraw:")
+						|| mediaUrl.startsWith("avcapture:"))) {
 					Permission.checkPermission("media.camera");
 				}
 				try {

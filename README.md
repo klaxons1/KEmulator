@@ -70,7 +70,11 @@ Graphics card:
 
 ## Camera capture
 
-Enable **VLC Player** in the emulator's Media settings and install a compatible libVLC (matching the emulator's architecture). Camera MIDlets use VLC's **DirectShow** input on Windows and **Video4Linux2** input on Linux. Windows uses the default camera; Linux uses `/dev/video0` by default and `/dev/video1` for `capture://devcam1`. The emulator needs permission to access the camera device.
+Enable **VLC Player** in the emulator's Media settings and install a compatible libVLC (matching the JVM's architecture).
+
+- **Windows:** DirectShow, using the default camera.
+- **Linux:** Video4Linux2, using `/dev/video0` by default or `/dev/video1` for `capture://devcam1`.
+- **macOS:** AVFoundation, using the default camera. Install VLC in `/Applications` for automatic discovery, or point the VLC Path setting to the directory containing `libvlc.dylib` (normally `VLC.app/Contents/MacOS/lib`). Allow camera access for the app hosting the JVM if macOS prompts. You can review access in **System Settings → Privacy & Security → Camera**.
 
 The preview is drawn inside MIDP, not in a separate VLC or DirectDraw window.
 
